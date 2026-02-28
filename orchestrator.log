@@ -1,0 +1,46 @@
+Traceback (most recent call last):
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/llm_orchestrator.py", line 10, in <module>
+    from google import genai
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/genai/__init__.py", line 21, in <module>
+    from .client import Client
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/genai/client.py", line 32, in <module>
+    from .live import AsyncLive
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/genai/live.py", line 55, in <module>
+    from google.auth.transport import requests
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/auth/transport/requests.py", line 43, in <module>
+    from google.oauth2 import service_account
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/oauth2/service_account.py", line 78, in <module>
+    from google.auth import _service_account_info
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/auth/_service_account_info.py", line 20, in <module>
+    from google.auth import crypt
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/auth/crypt/__init__.py", line 41, in <module>
+    from google.auth.crypt import es
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/google/auth/crypt/es.py", line 24, in <module>
+    from cryptography.hazmat.primitives import serialization
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/serialization/__init__.py", line 25, in <module>
+    from cryptography.hazmat.primitives.serialization.ssh import (
+    ...<11 lines>...
+    )
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/serialization/ssh.py", line 27, in <module>
+    from cryptography.hazmat.primitives.ciphers import (
+    ...<4 lines>...
+    )
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/ciphers/__init__.py", line 11, in <module>
+    from cryptography.hazmat.primitives.ciphers.base import (
+    ...<5 lines>...
+    )
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/ciphers/base.py", line 12, in <module>
+    from cryptography.hazmat.primitives.ciphers import modes
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/ciphers/modes.py", line 15, in <module>
+    from cryptography.hazmat.primitives.ciphers import algorithms
+  File "/Users/deandraper/Documents/Development/Digital Board Gamer/.venv/lib/python3.13/site-packages/cryptography/hazmat/primitives/ciphers/algorithms.py", line 8, in <module>
+    from cryptography.hazmat.decrepit.ciphers.algorithms import (
+        ARC4 as ARC4,
+    )
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1022, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1118, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1218, in get_data
+KeyboardInterrupt

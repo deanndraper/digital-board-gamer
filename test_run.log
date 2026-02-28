@@ -1,0 +1,24 @@
+Fetching video candidates from channels...
+Scraping Digital Board Gamer...
+Scraping Game-Night with Saisha...
+Scraping Peaky Boardgamer...
+Found 9 pending videos to process.
+[1/9] Processing: How to play Heat - Tunnel Vision, Newest expasion to BGA.
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[2/9] Processing: It's Back, this Loved Game is Back to BGA in Beta.
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[3/9] Processing: Watergate How to Play on BGA Tutorial
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[4/9] Processing: How to Play LODGE – A Brilliant Strategic Game!
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[5/9] Processing: Dice Mission - How to Play in 4 Mins!
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[6/9] Processing: Ghosts Galore - How to Play in 4 Mins!
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[7/9] Processing: PDX Master the Airways -1 minute Overview - Peaky Boardgamer
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[8/9] Processing: PDX Master the Airways + Visuals - Peaky Boardgamer
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+[9/9] Processing: Terrorscape 2 game overview - Upcoming Gamefound - Peaky Boardgamer
+ -> No transcript fetched: ERROR: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'
+No completed records found.
