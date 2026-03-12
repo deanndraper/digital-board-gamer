@@ -44,3 +44,263 @@ Traceback (most recent call last):
   File "<frozen importlib._bootstrap_external>", line 1118, in get_code
   File "<frozen importlib._bootstrap_external>", line 1218, in get_data
 KeyboardInterrupt
+2026-02-28 16:20:19,995 INFO Fetching video candidates from channels...
+2026-02-28 16:20:19,995 INFO Scraping Digital Board Gamer...
+2026-02-28 16:20:21,501 INFO Scraping Game-Night with Saisha...
+2026-02-28 16:20:22,970 INFO Scraping Peaky Boardgamer...
+2026-02-28 16:20:24,465 ERROR Set GEMINI_API_KEY environment variable to run LLM extraction.
+2026-02-28 16:20:24,465 INFO No completed records to export.
+2026-02-28 16:20:24,466 INFO --- Database Status ---
+2026-02-28 16:20:24,466 INFO   PENDING: 150
+2026-02-28 16:38:35,636 INFO Fetching video candidates from channels...
+2026-02-28 16:38:35,636 INFO Scraping Digital Board Gamer...
+2026-02-28 16:38:37,173 INFO Scraping Game-Night with Saisha...
+2026-02-28 16:38:38,675 INFO Scraping Peaky Boardgamer...
+2026-02-28 16:38:40,326 INFO Found 10 videos to process.
+2026-02-28 16:38:40,326 INFO [1/10] Processing: New to BGA: Heat — Tunnel Vision, How to Play on BGA
+2026-02-28 16:38:40,326 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:38:58,367 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:38:58,374 INFO  -> Extraction successful!
+2026-02-28 16:39:00,379 INFO [2/10] Processing: It's Back, this Loved Game is Back to BGA in Beta.
+2026-02-28 16:39:00,380 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:39:21,485 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:39:21,487 INFO  -> Extraction successful!
+2026-02-28 16:39:23,492 INFO [3/10] Processing: Watergate How to Play on BGA Tutorial
+2026-02-28 16:39:23,492 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:40:28,346 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:40:28,349 INFO  -> Extraction successful!
+2026-02-28 16:40:30,350 INFO [4/10] Processing: New to BGA: Tacta — Is It Worth Your Time?
+2026-02-28 16:40:30,351 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:40:48,132 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:40:48,136 INFO  -> Extraction successful!
+2026-02-28 16:40:50,140 INFO [5/10] Processing: How to Play Habitats on BGA.
+2026-02-28 16:40:50,141 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:41:27,121 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:41:27,124 INFO  -> Extraction successful!
+2026-02-28 16:41:29,126 INFO [6/10] Processing: New to BGA: Stem and Branch, How to Play on BGA
+2026-02-28 16:41:29,126 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:42:07,297 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:42:07,341 INFO  -> Extraction successful!
+2026-02-28 16:42:09,346 INFO [7/10] Processing: BGA Awards 2026 Winners
+2026-02-28 16:42:09,346 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:42:52,759 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:42:52,763 INFO  -> Extraction successful!
+2026-02-28 16:42:54,763 INFO [8/10] Processing: New to BGA: Dice Mission, How to Play on BGA
+2026-02-28 16:42:54,764 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:43:30,430 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:43:30,435 INFO  -> Extraction successful!
+2026-02-28 16:43:32,438 INFO [9/10] Processing: New to BGA: Cartographers Heroes — How to Play on BGA.
+2026-02-28 16:43:32,439 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:44:16,014 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:44:16,018 INFO  -> Extraction successful!
+2026-02-28 16:44:18,024 INFO [10/10] Processing: Good Fortune – How to Play Tutorial (Board Game Arena)
+2026-02-28 16:44:18,024 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 16:45:01,324 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 16:45:01,368 INFO  -> Extraction successful!
+2026-02-28 16:45:03,376 INFO Exporting 10 records to Complete_Insights.jsonl
+2026-02-28 16:45:03,378 INFO --- Database Status ---
+2026-02-28 16:45:03,378 INFO   COMPLETED: 10
+2026-02-28 16:45:03,378 INFO   PENDING: 140
+2026-02-28 18:40:01,582 INFO Fetching video candidates from channels...
+2026-02-28 18:40:01,583 INFO Scraping Digital Board Gamer...
+2026-02-28 18:40:03,106 INFO Scraping Game-Night with Saisha...
+2026-02-28 18:40:04,580 INFO Scraping Peaky Boardgamer...
+2026-02-28 18:40:06,083 INFO Found 1 videos to process.
+2026-02-28 18:40:06,083 INFO [1/1] Processing: BGA Awards 2026 Winners
+2026-02-28 18:40:06,084 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:40:30,612 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:40:30,619 INFO  -> Extraction successful!
+2026-02-28 18:40:32,624 INFO Exporting 10 records to Complete_Insights.jsonl
+2026-02-28 18:40:32,627 INFO --- Database Status ---
+2026-02-28 18:40:32,627 INFO   COMPLETED: 10
+2026-02-28 18:40:32,627 INFO   PENDING: 140
+2026-02-28 18:41:42,987 INFO Fetching video candidates from channels...
+2026-02-28 18:41:42,988 INFO Scraping Digital Board Gamer...
+2026-02-28 18:41:44,483 INFO Scraping Game-Night with Saisha...
+2026-02-28 18:41:45,956 INFO Scraping Peaky Boardgamer...
+2026-02-28 18:41:47,429 INFO Found 10 videos to process.
+2026-02-28 18:41:47,429 INFO [1/10] Processing: Reef Gardens – How to Play Tutorial (Board Game Arena)
+2026-02-28 18:41:47,429 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:42:53,343 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:42:53,354 INFO  -> Extraction successful!
+2026-02-28 18:42:55,359 INFO [2/10] Processing: New to BGA: Ghosts Galore — Is It Worth Your Time? How to Play On BGA
+2026-02-28 18:42:55,359 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:43:29,083 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:43:29,091 INFO  -> Extraction successful!
+2026-02-28 18:43:31,096 INFO [3/10] Processing: Top 5 in 5 | January 2026 — Best New Games on Board Game Arena From Jan 2026.
+2026-02-28 18:43:31,098 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:44:07,870 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:44:07,877 INFO  -> Extraction successful!
+2026-02-28 18:44:09,882 INFO [4/10] Processing: How to Play Captain Flip Expansion — Isla Bomba
+2026-02-28 18:44:09,882 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:44:34,576 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:44:34,580 INFO  -> Extraction successful!
+2026-02-28 18:44:36,585 INFO [5/10] Processing: How to Play Postcards on BGA
+2026-02-28 18:44:36,586 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:45:18,618 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:45:18,623 INFO  -> Extraction successful!
+2026-02-28 18:45:20,627 INFO [6/10] Processing: New to BGA: Space Lab — Is It Worth Your Time?
+2026-02-28 18:45:20,628 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:45:57,225 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:45:57,230 INFO  -> Extraction successful!
+2026-02-28 18:45:59,233 INFO [7/10] Processing: New to BGA: Tembo — Survival on the Savanna. How to play on BGA
+2026-02-28 18:45:59,234 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:47:04,092 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:47:04,099 INFO  -> Extraction successful!
+2026-02-28 18:47:06,103 INFO [8/10] Processing: Which Dice Tower Host Has the Most Top 100 Games on BGA? Take 2!
+2026-02-28 18:47:06,103 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:49:29,821 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:49:29,832 INFO  -> Extraction successful!
+2026-02-28 18:49:31,842 INFO [9/10] Processing: Board Game Creators Take on 7 Wonders Dice
+2026-02-28 18:49:31,843 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:53:22,454 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:53:22,460 INFO  -> Extraction successful!
+2026-02-28 18:53:24,470 INFO [10/10] Processing: New to BGA: 7 Wonders Dice — Is It Worth Your Time? How to Play & review on BGA
+2026-02-28 18:53:24,471 INFO AFC is enabled with max remote calls: 10.
+2026-02-28 18:54:17,928 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-02-28 18:54:17,933 INFO  -> Extraction successful!
+2026-02-28 18:54:19,946 INFO Exporting 20 records to Complete_Insights.jsonl
+2026-02-28 18:54:19,949 INFO --- Database Status ---
+2026-02-28 18:54:19,949 INFO   COMPLETED: 20
+2026-02-28 18:54:19,949 INFO   PENDING: 130
+2026-03-01 13:08:39,915 INFO Exporting 18 records to Complete_Insights.jsonl
+2026-03-01 13:28:19,225 INFO Fetching video candidates from channels...
+2026-03-01 13:28:19,227 INFO Scraping Digital Board Gamer...
+2026-03-01 13:28:20,736 INFO Scraping Game-Night with Saisha...
+2026-03-01 13:28:22,151 INFO Scraping Peaky Boardgamer...
+2026-03-01 13:28:23,671 INFO Found 10 videos to process.
+2026-03-01 13:28:23,671 INFO [1/10] Processing: New to BGA: Heat — Tunnel Vision, How to Play on BGA
+2026-03-01 13:28:23,671 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:28:34,117 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:28:34,125 INFO  -> Extraction successful!
+2026-03-01 13:28:36,128 INFO [2/10] Processing: It's Back, this Loved Game is Back to BGA in Beta.
+2026-03-01 13:28:36,129 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:28:48,010 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:28:48,014 INFO  -> Extraction successful!
+2026-03-01 13:28:50,016 INFO [3/10] Processing: Watergate How to Play on BGA Tutorial
+2026-03-01 13:28:50,017 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:29:25,247 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:29:25,253 INFO  -> Extraction successful!
+2026-03-01 13:29:27,257 INFO [4/10] Processing: New to BGA: Tacta — Is It Worth Your Time?
+2026-03-01 13:29:27,258 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:29:40,537 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:29:40,542 INFO  -> Extraction successful!
+2026-03-01 13:29:42,546 INFO [5/10] Processing: How to Play Habitats on BGA.
+2026-03-01 13:29:42,547 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:29:57,632 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:29:57,636 INFO  -> Extraction successful!
+2026-03-01 13:29:59,638 INFO [6/10] Processing: New to BGA: Stem and Branch, How to Play on BGA
+2026-03-01 13:29:59,638 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:30:31,084 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:30:31,087 INFO  -> Extraction successful!
+2026-03-01 13:30:33,092 INFO [7/10] Processing: New to BGA: Dice Mission, How to Play on BGA
+2026-03-01 13:30:33,092 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:30:43,818 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:30:43,822 INFO  -> Extraction successful!
+2026-03-01 13:30:45,826 INFO [8/10] Processing: New to BGA: Cartographers Heroes — How to Play on BGA.
+2026-03-01 13:30:45,826 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:31:16,332 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:31:16,336 INFO  -> Extraction successful!
+2026-03-01 13:31:18,339 INFO [9/10] Processing: Good Fortune – How to Play Tutorial (Board Game Arena)
+2026-03-01 13:31:18,339 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:31:30,396 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:31:30,402 INFO  -> Extraction successful!
+2026-03-01 13:31:32,406 INFO [10/10] Processing: Beyond BGA: 12 Digital Board Games I Found at Steam's Board Game Fest
+2026-03-01 13:31:32,407 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:32:40,765 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:32:40,770 INFO  -> Extraction successful!
+2026-03-01 13:32:42,779 INFO Exporting 19 records to Complete_Insights.jsonl
+2026-03-01 13:32:42,781 INFO --- Database Status ---
+2026-03-01 13:32:42,781 INFO   COMPLETED: 19
+2026-03-01 13:32:42,781 INFO   PENDING: 129
+2026-03-01 13:32:42,781 INFO   SKIPPED_BY_FILTER: 2
+2026-03-01 13:40:54,657 INFO Fetching video candidates from channels...
+2026-03-01 13:40:54,657 INFO Scraping Digital Board Gamer...
+2026-03-01 13:40:56,131 INFO Scraping Game-Night with Saisha...
+2026-03-01 13:40:57,521 INFO Scraping Peaky Boardgamer...
+2026-03-01 13:40:58,961 INFO Found 20 videos to process.
+2026-03-01 13:40:58,961 INFO [1/20] Processing: New to BGA: Pili-Pili — Is It Worth Your Time?
+2026-03-01 13:40:58,962 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:41:17,973 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:41:17,979 INFO  -> Extraction successful!
+2026-03-01 13:41:19,984 INFO [2/20] Processing: Space Lab: How to Play Tutorial on Board Game Arena
+2026-03-01 13:41:19,986 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:41:54,375 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:41:54,380 INFO  -> Extraction successful!
+2026-03-01 13:41:56,381 INFO [3/20] Processing: Ghosts Galore: Easy How to Play Tutorial
+2026-03-01 13:41:56,381 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:42:22,767 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:42:22,770 INFO  -> Extraction successful!
+2026-03-01 13:42:24,774 INFO [4/20] Processing: New to BGA: Spirited — Is It Worth Your Time?
+2026-03-01 13:42:24,775 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:43:31,031 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:43:31,036 INFO  -> Extraction successful!
+2026-03-01 13:43:33,040 INFO [5/20] Processing: 7 Wonders Dice Tutorial - How to Play on Board Game Arena.
+2026-03-01 13:43:33,040 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:44:15,009 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:44:15,012 INFO  -> Extraction successful!
+2026-03-01 13:44:17,017 INFO [6/20] Processing: New to BGA: Carnuta — Is It Worth Your Time?
+2026-03-01 13:44:17,018 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:45:00,985 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:45:00,988 INFO  -> Extraction successful!
+2026-03-01 13:45:02,993 INFO [7/20] Processing: My Top 10 Board Game Arena Games of 2025
+2026-03-01 13:45:02,993 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:46:05,075 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:46:05,080 INFO  -> Extraction successful!
+2026-03-01 13:46:07,081 INFO [8/20] Processing: 2026 Board Game Arena Awards Overview + My Picks for 2025
+2026-03-01 13:46:07,081 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:47:25,733 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:47:25,739 INFO  -> Extraction successful!
+2026-03-01 13:47:27,745 INFO [9/20] Processing: New to BGA: Dewan — Is It Worth Your Time?
+2026-03-01 13:47:27,745 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:48:20,490 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:48:20,491 INFO  -> Extraction successful!
+2026-03-01 13:48:22,493 INFO [10/20] Processing: How to Play Pili-Pili on BGA (Quick Rules Overview)
+2026-03-01 13:48:22,493 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:48:52,106 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:48:52,110 INFO  -> Extraction successful!
+2026-03-01 13:48:54,113 INFO [11/20] Processing: New to BGA: Booty Dice — Is It Worth Your Time?
+2026-03-01 13:48:54,114 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:49:27,565 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:49:27,570 INFO  -> Extraction successful!
+2026-03-01 13:49:29,575 INFO [12/20] Processing: Carnuta Tutorial – How to Play on BGA
+2026-03-01 13:49:29,576 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:50:10,781 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:50:10,786 INFO  -> Extraction successful!
+2026-03-01 13:50:12,793 INFO [13/20] Processing: The Hottest and Not-So-Hot Games of 2025 on Board Game Arena
+2026-03-01 13:50:12,794 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:52:01,455 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:52:01,460 INFO  -> Extraction successful!
+2026-03-01 13:52:03,467 INFO [14/20] Processing: New to BGA: Agent Avenue — Is It Worth Your Time?
+2026-03-01 13:52:03,468 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:52:38,839 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:52:38,843 INFO  -> Extraction successful!
+2026-03-01 13:52:40,853 INFO [15/20] Processing: Cry Baby (Chouineurs) – How to Play This Clever Trick-Taking Game
+2026-03-01 13:52:40,854 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:53:09,577 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:53:09,582 INFO  -> Extraction successful!
+2026-03-01 13:53:11,590 INFO [16/20] Processing: New to BGA: Popcorn — Is It Worth Your Time?
+2026-03-01 13:53:11,591 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:53:59,311 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:53:59,316 INFO  -> Extraction successful!
+2026-03-01 13:54:01,319 INFO [17/20] Processing: Top 20 Most Played Games of All Time on BGA.
+2026-03-01 13:54:01,320 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:55:07,743 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:55:07,746 INFO  -> Extraction successful!
+2026-03-01 13:55:09,752 INFO [18/20] Processing: New to BGA: Texas Hold’em — Is It Worth Your Time?
+2026-03-01 13:55:09,752 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:55:49,499 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:55:49,503 INFO  -> Extraction successful!
+2026-03-01 13:55:51,506 INFO [19/20] Processing: New to BGA: Formula D — Is It Worth Your Time?
+2026-03-01 13:55:51,507 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:56:43,153 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:56:43,160 INFO  -> Extraction successful!
+2026-03-01 13:56:45,169 INFO [20/20] Processing: New to BGA: Junk Drawer — Is It Worth Your Time?
+2026-03-01 13:56:45,170 INFO AFC is enabled with max remote calls: 10.
+2026-03-01 13:57:21,347 INFO HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-03-01 13:57:21,350 INFO  -> Extraction successful!
+2026-03-01 13:57:23,361 INFO Exporting 39 records to Complete_Insights.jsonl
+2026-03-01 13:57:23,364 INFO --- Database Status ---
+2026-03-01 13:57:23,364 INFO   COMPLETED: 39
+2026-03-01 13:57:23,364 INFO   PENDING: 109
+2026-03-01 13:57:23,364 INFO   SKIPPED_BY_FILTER: 2

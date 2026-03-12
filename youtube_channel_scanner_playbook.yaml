@@ -1,0 +1,441 @@
+# ============================================================================
+# YouTube Channel Scanner Playbook
+# ============================================================================
+# Lessons learned from the Digital Board Gamer project.
+# Use this as a template to scan any set of YouTube channels, extract
+# structured data with an LLM, and export the results.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. ARCHITECTURE OVERVIEW
+# ---------------------------------------------------------------------------
+# The pattern has four phases that run in a single CLI invocation:
+#   Scrape -> Filter -> Extract (LLM) -> Export
+#
+# State is tracked in SQLite so the pipeline is resumable, retryable,
+# and idempotent. Each video is processed exactly once unless explicitly
+# retried.
+
+architecture:
+  phases:
+    - name: scrape
+      description: >
+        Use `scrapetube` to enumerate videos from each channel URL.
+        Insert new video IDs into a SQLite table with status PENDING.
+        Already-known IDs are silently skipped (idempotent).
+      key_library: scrapetube (no API key needed, scrapes public pages)
+      gotchas:
+        - scrapetube returns a generator; iterate with a count cap
+          (VIDEOS_PER_CHANNEL) to avoid unbounded network calls.
+        - Video title lives at video['title']['runs'][0]['text'] — not
+          a flat string.
+        - publishedTimeText is relative ("3 months ago"), not an ISO date.
+
+    - name: filter
+      description: >
+        Before sending a video to the LLM, decide whether it is in-scope.
+        Use two complementary mechanisms.
+      mechanisms:
+        explicit_skip_ids:
+          description: >
+            A set of video IDs known to be off-topic. Safest filter —
+            no risk of false positives.
+          when_to_use: >
+            After reviewing output and spotting a bad result. Add the
+            video ID to the skip set so it won't be reprocessed.
+        title_keyword_skip:
+          description: >
+            A list of lowercase substrings (e.g. "channel update",
+            "giveaway", "live stream"). If any keyword appears in the
+            video title, mark it SKIPPED_BY_FILTER.
+          when_to_use: >
+            For clearly off-topic content categories that apply across
+            ALL channels. Keep the list short and generic to avoid
+            accidentally skipping real content.
+      lesson: >
+        Prefer explicit ID skips over keyword heuristics. Keyword filters
+        are convenient but risk false positives on legitimate content.
+
+    - name: extract
+      description: >
+        Send each PENDING video URL to Gemini for structured extraction.
+        Gemini can ingest YouTube URLs directly as file_data — no
+        transcript API or yt-dlp needed.
+      key_decisions:
+        - use_gemini_native_video_input: true
+          reason: >
+            Gemini accepts YouTube URLs via types.Part(file_data=...).
+            This is drastically simpler than downloading transcripts.
+            Earlier attempts with yt-dlp and transcript APIs were
+            abandoned in favor of this approach.
+        - response_mime_type: application/json
+          reason: >
+            Forces the LLM to return valid JSON, eliminating the need
+            to parse markdown code fences or handle malformed output.
+        - rate_limiting: 2 seconds between calls
+          reason: >
+            Avoids hitting Gemini API rate limits. Adjust based on your
+            quota tier.
+
+    - name: export
+      description: >
+        Read all COMPLETED rows from SQLite, inject metadata
+        (_vid_title, channel, published_date), and write one JSON
+        object per line to a .jsonl file. Re-export overwrites the
+        entire file (safe because SQLite is the source of truth).
+
+# ---------------------------------------------------------------------------
+# 2. STATE MANAGEMENT
+# ---------------------------------------------------------------------------
+state_management:
+  engine: SQLite
+  database_file: orchestrator_state.db
+  schema:
+    table: videos
+    columns:
+      - video_id: TEXT PRIMARY KEY
+      - title: TEXT
+      - url: TEXT
+      - channel: TEXT
+      - status: "TEXT DEFAULT 'PENDING'"
+      - published_date: TEXT
+      - extracted_data: TEXT   # full JSON blob from LLM
+      - error_msg: TEXT        # error details on failure
+
+  statuses:
+    PENDING: Not yet processed
+    COMPLETED: Successfully extracted
+    FAILED_LLM: LLM call failed (network, quota, bad JSON)
+    FAILED_TRANSCRIPT: Transcript retrieval failed (legacy, before native video input)
+    SKIPPED_BY_FILTER: Excluded by skip-ID or keyword filter
+
+  benefits:
+    - Resumability: interrupt the run at any time; re-run picks up where it left off.
+    - Retry: use --retry flag to re-attempt FAILED_* videos.
+    - Auditability: query the DB to see exactly what succeeded, failed, or was skipped.
+    - Idempotency: re-scraping channels won't duplicate rows.
+
+# ---------------------------------------------------------------------------
+# 3. PROMPT ENGINEERING
+# ---------------------------------------------------------------------------
+prompt_engineering:
+  structure: |
+    The extraction prompt should:
+      1. State the AI's role and the domain context.
+      2. List every field to extract, with type and nullability rules.
+      3. Include disambiguation rules for ambiguous fields.
+      4. Provide an example JSON object matching the exact schema.
+      5. End with "Return ONLY a JSON object matching this schema precisely."
+
+  lessons:
+    - name: Be explicit about field semantics
+      detail: >
+        In the board game use case, "score" (reviewer's personal rating)
+        was confused with "vote_percentage" (poll/community share). Adding
+        an explicit rule — "Do NOT put vote percentages here — only the
+        reviewer's own score" — fixed the confusion.
+    - name: Use structured output mode
+      detail: >
+        Setting response_mime_type="application/json" on the Gemini call
+        forces valid JSON output. This is far more reliable than asking
+        the model to return JSON in the prompt alone.
+    - name: Provide an exhaustive enum for classification
+      detail: >
+        When asking the LLM to classify content, list every valid value
+        explicitly. Open-ended classification leads to inconsistent labels.
+    - name: Expect hallucination in metadata
+      detail: >
+        Gemini fabricated data for years before the channel existed
+        (e.g., invented 2018-2024 game reviews for a channel that started
+        in Feb 2025). NEVER trust LLM-generated metadata (dates, scores,
+        rankings) without cross-referencing against a known source.
+        The suspect_games_review.md file documented 70+ fabricated entries.
+    - name: Inject known metadata yourself
+      detail: >
+        Don't ask the LLM for things you already know (video URL, channel
+        name, published date). Inject these into the result after extraction.
+
+# ---------------------------------------------------------------------------
+# 4. VALIDATION & DATA QUALITY
+# ---------------------------------------------------------------------------
+validation:
+  approach: >
+    Cross-reference LLM output against an independent data source
+    (e.g., a manually curated spreadsheet) using fuzzy matching.
+
+  fuzzy_matching:
+    library: fuzzywuzzy (backed by RapidFuzz for speed)
+    threshold: 85  # fuzz.ratio score
+    techniques:
+      - Substring containment check before fuzzy scoring (fast path).
+      - Clean titles by stripping common noise phrases ("how to play",
+        "review", "top N", "playthrough", "tutorial", etc.) before
+        comparing.
+      - Split on separators (- – | : ! , +) and take the first
+        meaningful segment as the likely game/entity name.
+    use_cases:
+      - Detect missing entries: videos on channel not in spreadsheet.
+      - Detect fabricated entries: spreadsheet entries with no matching
+        video (hallucination detection).
+      - Deduplication: avoid adding the same entity twice under slightly
+        different names.
+
+  hallucination_mitigation:
+    - Compare LLM-claimed dates against the channel's actual start date.
+    - Match every extracted entity back to a specific video URL.
+    - Maintain a "suspect entries" review document for human audit.
+    - Process in small batches (--limit=10) and review before scaling up.
+
+# ---------------------------------------------------------------------------
+# 5. CONFIGURATION PATTERN
+# ---------------------------------------------------------------------------
+configuration:
+  file: config.py
+  principle: >
+    Separate all tunable values from logic. The orchestrator imports
+    constants; adapting to a new domain means editing config.py only.
+
+  parameters:
+    - name: CHANNELS
+      type: "dict[str, str]"
+      description: "Channel display name -> YouTube channel URL"
+      example:
+        Digital Board Gamer: "https://www.youtube.com/@DigitalBoardGamer"
+
+    - name: GEMINI_MODEL
+      type: str
+      description: Which Gemini model to use
+      example: gemini-2.5-flash
+      note: >
+        Flash is fast and cheap. Use Pro for higher accuracy on
+        complex prompts if budget allows.
+
+    - name: VIDEOS_PER_CHANNEL
+      type: int
+      description: Max videos to fetch per channel per run
+      example: 50
+
+    - name: RATE_LIMIT_SECONDS
+      type: int
+      description: Pause between LLM calls
+      example: 2
+
+    - name: SKIP_VIDEO_IDS
+      type: "set[str]"
+      description: Known off-topic video IDs
+
+    - name: SKIP_TITLE_KEYWORDS
+      type: "list[str]"
+      description: Generic title substrings to auto-skip
+
+    - name: DB_NAME
+      type: str
+      description: SQLite database filename
+
+# ---------------------------------------------------------------------------
+# 6. CLI DESIGN
+# ---------------------------------------------------------------------------
+cli:
+  invocation: "python llm_orchestrator.py [OPTIONS]"
+  flags:
+    --limit=N: Process at most N pending videos (good for incremental runs)
+    --retry: Also retry FAILED_TRANSCRIPT and FAILED_LLM videos
+    N: Positional shorthand for --limit=N
+  design_lessons:
+    - A single entry point that runs all phases (scrape, extract, export)
+      is simpler than separate scripts.
+    - --limit is essential for iterative quality checks. Process 10,
+      review, adjust the prompt, then process the rest.
+    - Always print a status summary at the end of every run.
+
+# ---------------------------------------------------------------------------
+# 7. LOGGING & OBSERVABILITY
+# ---------------------------------------------------------------------------
+logging:
+  setup: Dual handler — file (orchestrator.log) + stderr
+  format: "%(asctime)s %(levelname)s %(message)s"
+  what_to_log:
+    - Channel scrape start/end
+    - Per-video progress: "[3/10] Processing: <title>"
+    - Success/failure per video
+    - Final status summary (counts by status)
+  lesson: >
+    The log file is invaluable for debugging failures after the fact.
+    Log the video title and index on every attempt so you can correlate
+    errors to specific content.
+
+# ---------------------------------------------------------------------------
+# 8. ERROR HANDLING
+# ---------------------------------------------------------------------------
+error_handling:
+  per_video_isolation: >
+    Wrap each video's extraction in try/except. A failure on one video
+    should NOT abort the entire batch. Record the error in the DB and
+    move on.
+  keyboard_interrupt: >
+    Always re-raise KeyboardInterrupt so the user can cleanly stop a
+    long run. Committed state up to that point is preserved in SQLite.
+  channel_scrape_errors: >
+    Catch and log scrape errors per channel. If one channel is down,
+    the others still process.
+
+# ---------------------------------------------------------------------------
+# 9. DEPENDENCIES & ENVIRONMENT
+# ---------------------------------------------------------------------------
+dependencies:
+  python: ">=3.11"
+  packages:
+    - google-genai: ">=1.65.0   # Gemini SDK with native video support"
+    - scrapetube: ">=2.6.0      # YouTube channel scraper (no API key)"
+    - pandas: ">=3.0.0          # Spreadsheet cross-referencing"
+    - openpyxl: ">=3.1.0        # Excel read/write for pandas"
+    - fuzzywuzzy: ">=0.18.0     # Fuzzy string matching"
+    - RapidFuzz: ">=3.0.0       # Fast C backend for fuzzywuzzy"
+
+  environment_variables:
+    GEMINI_API_KEY: Required. Set before running.
+
+  virtual_environment: >
+    Use a standard venv. The .gitignore should exclude .venv/, __pycache__/,
+    *.db, *.log, and temp Office files (~$*.xlsx).
+
+# ---------------------------------------------------------------------------
+# 10. ADAPTING TO A NEW USE CASE
+# ---------------------------------------------------------------------------
+# To reuse this pattern for a different domain (e.g., cooking channels,
+# tech reviews, music analysis), follow these steps:
+adaptation_guide:
+
+  step_1_define_channels:
+    action: >
+      Edit config.py. Replace CHANNELS with your target channel names
+      and URLs.
+    example:
+      CHANNELS:
+        Babish Culinary Universe: "https://www.youtube.com/@BabishCulinaryUniverse"
+        Joshua Weissman: "https://www.youtube.com/@JoshuaWeissman"
+
+  step_2_design_extraction_schema:
+    action: >
+      Rewrite EXTRACTION_PROMPT in llm_orchestrator.py. Define the fields
+      relevant to your domain. Be specific about types, nullability, and
+      disambiguation rules.
+    example_fields_for_cooking:
+      - recipe_name: str
+      - cuisine: str
+      - difficulty: "easy | medium | hard"
+      - cook_time_minutes: int or null
+      - ingredients_count: int
+      - rating: float or null
+      - opinion: str
+
+  step_3_update_filters:
+    action: >
+      Adjust SKIP_VIDEO_IDS and SKIP_TITLE_KEYWORDS for your domain.
+      For cooking channels you might skip "vlog", "q&a", "merch drop".
+
+  step_4_adjust_validation:
+    action: >
+      If you have a reference dataset, adapt the fuzzy-matching logic in
+      validate_data.py and extract_all.py. Update the title-cleaning
+      regexes to strip domain-specific noise phrases.
+
+  step_5_run_incrementally:
+    action: >
+      Start with --limit=5. Review the JSONL output. Tune the prompt.
+      Then scale up. This is the single most important lesson — do not
+      process 150 videos on an untested prompt.
+
+  step_6_audit_for_hallucinations:
+    action: >
+      Cross-reference every extracted claim against the actual video.
+      Maintain a suspect-entries document. LLMs WILL fabricate plausible
+      but false data, especially dates, scores, and rankings.
+
+# ---------------------------------------------------------------------------
+# 11. KEY LESSONS (SUMMARY)
+# ---------------------------------------------------------------------------
+key_lessons:
+  - id: L01
+    lesson: Gemini can ingest YouTube URLs directly — skip transcript APIs
+    detail: >
+      Using types.Part(file_data=types.FileData(file_uri=youtube_url))
+      eliminates the entire transcript download pipeline. This was the
+      biggest simplification in the project.
+
+  - id: L02
+    lesson: SQLite is the ideal state store for batch LLM pipelines
+    detail: >
+      It's zero-config, file-based, supports concurrent reads, and makes
+      the pipeline fully resumable. No need for Redis, Postgres, or
+      file-based locking.
+
+  - id: L03
+    lesson: Process in small batches first
+    detail: >
+      Run --limit=10, review output quality, refine the prompt, then
+      process the rest. The project had to reset 9 videos when the
+      schema changed — small batches minimize rework.
+
+  - id: L04
+    lesson: LLMs hallucinate structured data convincingly
+    detail: >
+      Gemini fabricated 70+ game entries with plausible scores and
+      rankings for years before the channel existed. Always validate
+      LLM output against an independent source.
+
+  - id: L05
+    lesson: Inject metadata — don't extract it
+    detail: >
+      Video URL, channel name, and published date are already known.
+      Injecting them after extraction is faster and 100% accurate.
+      Asking the LLM to extract them invites errors.
+
+  - id: L06
+    lesson: Force JSON output mode on the API
+    detail: >
+      response_mime_type="application/json" is more reliable than
+      prompt instructions alone. It eliminates markdown fences,
+      trailing text, and malformed JSON.
+
+  - id: L07
+    lesson: scrapetube is the simplest YouTube channel scraper
+    detail: >
+      No API key needed, works by scraping the public channel page.
+      Returns a generator of video metadata dicts. Handles pagination
+      internally.
+
+  - id: L08
+    lesson: Fuzzy matching at 85% threshold works well for deduplication
+    detail: >
+      fuzz.ratio with a threshold of 85 catches most title variations
+      without generating false positives. Combine with substring
+      containment as a fast path.
+
+  - id: L09
+    lesson: Per-video error isolation is critical
+    detail: >
+      One bad video (private, deleted, region-locked) must not crash
+      the entire batch. Catch exceptions per-video, record the error,
+      and continue.
+
+  - id: L10
+    lesson: Dual logging (file + stderr) gives you the best of both worlds
+    detail: >
+      See progress in real-time on the terminal; diagnose issues
+      after the fact from the log file.
+
+  - id: L11
+    lesson: A single-script orchestrator beats a multi-script pipeline
+    detail: >
+      Having scrape, extract, and export in one file with one CLI
+      entry point is easier to run, debug, and hand off than separate
+      scripts connected by shell pipelines.
+
+  - id: L12
+    lesson: The yt-dlp transcript approach was abandoned for good reason
+    detail: >
+      Early attempts used yt-dlp to download auto-generated subtitles
+      and then fed the text to the LLM. This added complexity (shell
+      scripts, file management, subtitle parsing) and produced worse
+      results than Gemini's native video understanding.

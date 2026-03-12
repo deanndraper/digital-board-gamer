@@ -1,22 +1,61 @@
 import sqlite3
 import json
-import re
 import os
+import sys
 import time
+import logging
 from datetime import datetime
+
 import scrapetube
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
 from google import genai
 from google.genai import types
 
-CHANNELS = {
-    'Digital Board Gamer': 'https://www.youtube.com/@DigitalBoardGamer',
-    'Game-Night with Saisha': 'https://www.youtube.com/@GameNightwithSaisha',
-    'Peaky Boardgamer': 'https://www.youtube.com/@PeakyBoardgamer'
-}
+from config import (
+    CHANNELS, DB_NAME, GEMINI_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
+    SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS,
+)
 
-DB_NAME = 'orchestrator_state.db'
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    handlers=[
+        logging.FileHandler('orchestrator.log'),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger(__name__)
+
+EXTRACTION_PROMPT = """\
+You are an AI tasked with analyzing a board game YouTube video.
+
+Extract the following data points into a strictly formatted JSON object:
+1. A list of games covered in the video. For each game, extract:
+   - "title": The name of the game.
+   - "ranking": The numerical ranking given to the game in this video (e.g. 1 if it is their #1 game). Use null if no rank is given.
+   - "score": The reviewer's personal numeric rating for the game (e.g. 7/10, 8.5/10). Use null if no personal rating is given. IMPORTANT: Do NOT put vote percentages, poll results, or community vote shares here — only the reviewer's own score out of 10.
+   - "vote_percentage": If the video is about awards or polls, the percentage of votes this game received. Use null otherwise.
+   - "award_category": If the game won or was nominated in an award category, the category name (e.g. "Best Casual Game"). Use null otherwise.
+   - "opinion": A brief summary of the reviewer's subjective opinion of this specific game.
+2. "summary": A brief summary of the overall video. (string)
+3. "classification": Choose one of: 'best of year', 'how to play', 'new game including how to play', 'new game including how to play and rating', 'review', 'playthrough', 'other'. (string)
+
+Return ONLY a JSON object matching this schema precisely:
+{
+    "games": [
+        {
+            "title": "Game Name",
+            "ranking": 1,
+            "score": 9.5,
+            "vote_percentage": null,
+            "award_category": null,
+            "opinion": "absolutely fantastic mechanics."
+        }
+    ],
+    "summary": "...",
+    "classification": "..."
+}
+"""
+
 
 def setup_db():
     conn = sqlite3.connect(DB_NAME)
@@ -36,166 +75,167 @@ def setup_db():
     conn.commit()
     return conn
 
+
 def fetch_candidates(conn):
-    print("Fetching video candidates from channels...")
+    log.info("Fetching video candidates from channels...")
     c = conn.cursor()
     for channel, url in CHANNELS.items():
-        print(f"Scraping {channel}...")
+        log.info("Scraping %s...", channel)
         try:
             videos = scrapetube.get_channel(channel_url=url)
             count = 0
             for video in videos:
-                if count >= 50: # limit to 50 videos per channel
+                if count >= VIDEOS_PER_CHANNEL:
                     break
-                
+
                 vid_id = video.get('videoId')
                 if not vid_id:
                     continue
                 count += 1
-                
-                # Check if already in DB
+
                 c.execute("SELECT video_id FROM videos WHERE video_id = ?", (vid_id,))
                 if c.fetchone():
                     continue
 
                 title = video.get('title', {}).get('runs', [{}])[0].get('text', 'Unknown Title')
                 vid_url = f"https://www.youtube.com/watch?v={vid_id}"
-                
-                # Pre-filter out non-game stuff
+
+                # Extract published date from scrapetube metadata
+                published_text = video.get('publishedTimeText', {}).get('simpleText', '')
+
+                # Skip known off-topic videos by ID or generic title keywords
                 status = 'PENDING'
-                lower_title = title.lower()
-                if 'channel update' in lower_title or 'vlog' in lower_title or 'q&a' in lower_title:
+                if vid_id in SKIP_VIDEO_IDS:
                     status = 'SKIPPED_BY_FILTER'
-                    
+                elif any(kw in title.lower() for kw in SKIP_TITLE_KEYWORDS):
+                    status = 'SKIPPED_BY_FILTER'
+
                 c.execute('''
-                    INSERT INTO videos (video_id, title, url, channel, status)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (vid_id, title, vid_url, channel, status))
+                    INSERT INTO videos (video_id, title, url, channel, status, published_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (vid_id, title, vid_url, channel, status, published_text))
             conn.commit()
-        except Exception as e:
-            print(f"Error fetching {channel}: {e}")
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            log.exception("Error fetching %s", channel)
 
-def get_transcript(video_id):
-    try:
-        api = YouTubeTranscriptApi()
-        transcript_list = api.list(video_id)
-        transcript = transcript_list.find_transcript(['en', 'en-GB', 'en-US', 'en-CA', 'en-AU', 'en-IN'])
-        transcript_data = transcript.fetch()
-        formatter = TextFormatter()
-        text = formatter.format_transcript(transcript_data)
-        return text
-    except Exception as e:
-        return f"ERROR: {e}"
 
-def extract_with_llm(client, video_title, transcript):
-    prompt = f"""
-    You are an AI tasked with analyzing a board game YouTube video transcript.
-    Video Title: {video_title}
-    
-    Transcript Snippet (truncated if too long):
-    {transcript[:8000]}
-    
-    Extract the following data points into a strictly formatted JSON object:
-    1. A list of games covered in the video. For each game, extract:
-       - "title": The name of the game.
-       - "ranking": The numerical ranking given to the game in this video (e.g. 1 if it is their #1 game of the year). Use null if no rank is given.
-       - "score": The numeric score given to the game if provided, else null.
-       - "opinion": A brief summary of the reviewer's subjective opinion of this specific game.
-    2. A brief summary of the overall video. (string)
-    3. Classification (Choose one: 'best of year', 'how to play', 'new game including how to play', 'new game including how to play and rating', 'review', 'playthrough', 'other'). (string)
-    4. The link to the video. (leave null, we handle this)
-    5. Date the video was published. (leave null, we handle this)
-    6. Channel of the video. (leave null, we handle this)
-
-    Return ONLY a JSON object matching this schema precisely:
-    {{
-        "games": [
-            {{
-                "title": "Game Name",
-                "ranking": 1,
-                "score": 9.5,
-                "opinion": "absolutely fantastic mechanics."
-            }}
-        ],
-        "summary": "...",
-        "classification": "..."
-    }}
-    """
-    
+def extract_with_gemini(client, video_url):
+    """Send the YouTube URL directly to Gemini for analysis — no transcript API needed."""
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=prompt,
+        model=GEMINI_MODEL,
+        contents=types.Content(
+            parts=[
+                types.Part(
+                    file_data=types.FileData(file_uri=video_url),
+                ),
+                types.Part(text=EXTRACTION_PROMPT),
+            ],
+        ),
         config=types.GenerateContentConfig(
-            response_mime_type="application/json"
-        )
+            response_mime_type="application/json",
+        ),
     )
     return response.text
 
-def process_pending(conn):
+
+def process_pending(conn, retry_failed=False, limit=None):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("Set GEMINI_API_KEY in environment variables to run LLM extraction.")
+        log.error("Set GEMINI_API_KEY environment variable to run LLM extraction.")
         return
 
     client = genai.Client(api_key=api_key)
     c = conn.cursor()
-    c.execute("SELECT video_id, title, url, channel FROM videos WHERE status = 'PENDING'")
+
+    statuses = ['PENDING']
+    if retry_failed:
+        statuses.extend(['FAILED_TRANSCRIPT', 'FAILED_LLM'])
+        log.info("Retrying previously failed videos as well.")
+
+    placeholders = ','.join('?' for _ in statuses)
+    query = f"SELECT video_id, title, url, channel, published_date FROM videos WHERE status IN ({placeholders})"
+    if limit:
+        query += f" LIMIT {int(limit)}"
+    c.execute(query, statuses)
     rows = c.fetchall()
-    
-    print(f"Found {len(rows)} pending videos to process.")
-    for idx, (vid_id, title, url, channel) in enumerate(rows):
-        print(f"[{idx+1}/{len(rows)}] Processing: {title}")
-        
-        transcript = get_transcript(vid_id)
-        if transcript.startswith("ERROR:"):
-            print(f" -> No transcript fetched: {transcript}")
-            c.execute("UPDATE videos SET status = 'FAILED_TRANSCRIPT', error_msg = ? WHERE video_id = ?", (transcript, vid_id))
-            conn.commit()
-            continue
-            
+
+    log.info("Found %d videos to process.", len(rows))
+    for idx, (vid_id, title, url, channel, published_date) in enumerate(rows):
+        log.info("[%d/%d] Processing: %s", idx + 1, len(rows), title)
+
         try:
-            llm_result_str = extract_with_llm(client, title, transcript)
-            # Parse the JSON just to validate it
+            llm_result_str = extract_with_gemini(client, url)
             llm_data = json.loads(llm_result_str)
-            
+
             # Inject our known metadata
             llm_data['video_link'] = url
             llm_data['channel'] = channel
-            # published_date omitted for now, need youtube api key or scraping html for exact date, which scrapetube skips easily.
-            # We can use scrapetube's relative time, but skipping for absolute correctness unless needed.
-            
-            c.execute("UPDATE videos SET status = 'COMPLETED', extracted_data = ? WHERE video_id = ?", (json.dumps(llm_data), vid_id))
+            llm_data['published_date'] = published_date or None
+
+            c.execute(
+                "UPDATE videos SET status = 'COMPLETED', extracted_data = ?, error_msg = NULL WHERE video_id = ?",
+                (json.dumps(llm_data), vid_id),
+            )
             conn.commit()
-            print(" -> Extraction Successful!")
+            log.info(" -> Extraction successful!")
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
-            print(f" -> LLM parsing failed: {e}")
-            c.execute("UPDATE videos SET status = 'FAILED_LLM', error_msg = ? WHERE video_id = ?", (str(e), vid_id))
+            log.exception(" -> Extraction failed for %s", title)
+            c.execute(
+                "UPDATE videos SET status = 'FAILED_LLM', error_msg = ? WHERE video_id = ?",
+                (str(e), vid_id),
+            )
             conn.commit()
-            
-        time.sleep(2) # rate limiting
+
+        time.sleep(RATE_LIMIT_SECONDS)
+
 
 def export_to_jsonl(conn):
     c = conn.cursor()
     c.execute("SELECT title, url, channel, extracted_data FROM videos WHERE status = 'COMPLETED'")
     rows = c.fetchall()
-    
+
     if not rows:
-        print("No completed records found.")
+        log.info("No completed records to export.")
         return
-        
+
     output_file = "Complete_Insights.jsonl"
-    print(f"Exporting {len(rows)} records to {output_file}")
+    log.info("Exporting %d records to %s", len(rows), output_file)
     with open(output_file, "w") as f:
         for title, url, channel, data in rows:
             entry = json.loads(data)
-            entry['_vid_title'] = title 
+            entry['_vid_title'] = title
             f.write(json.dumps(entry) + '\n')
-            
+
+
+def print_status(conn):
+    c = conn.cursor()
+    c.execute("SELECT status, COUNT(*) FROM videos GROUP BY status")
+    rows = c.fetchall()
+    log.info("--- Database Status ---")
+    for status, count in rows:
+        log.info("  %s: %d", status, count)
+
+
 def main():
+    retry_failed = '--retry' in sys.argv
+
+    limit = None
+    for arg in sys.argv[1:]:
+        if arg.startswith('--limit='):
+            limit = int(arg.split('=', 1)[1])
+        elif arg.isdigit():
+            limit = int(arg)
+
     conn = setup_db()
     fetch_candidates(conn)
-    process_pending(conn)
+    process_pending(conn, retry_failed=retry_failed, limit=limit)
     export_to_jsonl(conn)
+    print_status(conn)
+
 
 if __name__ == "__main__":
     main()
