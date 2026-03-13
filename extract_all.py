@@ -3,38 +3,21 @@ import scrapetube
 from fuzzywuzzy import fuzz
 import re
 
-from config import CHANNELS, SPREADSHEET_FILE, OUTPUT_FILE
+from config import (
+    CHANNELS, SPREADSHEET_FILE, OUTPUT_FILE,
+    TITLE_CLEANING_PATTERNS, TITLE_SPLIT_SEPARATORS,
+    FUZZY_MATCH_THRESHOLD, MIN_TITLE_LENGTH, EXCLUDED_SHORT_WORDS,
+    BGA_DETECTION_KEYWORDS, NEW_ENTRY_COLUMNS,
+)
 
 
 def smart_clean_title(title):
-    to_drop = [
-        r"(?i)how to play",
-        r"(?i)review",
-        r"(?i)top \d+",
-        r"(?i)playthrough",
-        r"(?i)unboxing",
-        r"(?i)tutorial",
-        r"(?i)setup",
-        r"(?i)board game arena",
-        r"(?i)bga",
-        r"(?i)full teach",
-        r"(?i)visuals",
-        r"(?i)1 minute overview",
-        r"(?i)overview",
-        r"(?i)on board game arena",
-        r"(?i)relaxing solo playthrough",
-        r"(?i)perfect for winding down",
-        r"(?i)in \d+ mins?",
-        r"(?i)in \d+ minutes?",
-        r"(?i)game overview",
-    ]
-
     clean = title
-    for p in to_drop:
+    for p in TITLE_CLEANING_PATTERNS:
         clean = re.sub(p, '', clean)
 
     # Split on common separators that usually divide the game name from commentary
-    splits = re.split(r'[-–|:!+,]|\b(Re-upload|Preview|Update)\b', clean)
+    splits = re.split(TITLE_SPLIT_SEPARATORS, clean)
 
     best_part = ""
     for part in splits:
@@ -79,16 +62,16 @@ def main():
 
                 extracted_name = smart_clean_title(vid_title)
 
-                if len(extracted_name) < 3 or extracted_name.isnumeric():
+                if len(extracted_name) < MIN_TITLE_LENGTH or extracted_name.isnumeric():
                     continue
-                if extracted_name.lower() in ['top', 'the', 'and', 'with']:
+                if extracted_name.lower() in EXCLUDED_SHORT_WORDS:
                     continue
 
                 extracted_lower = extracted_name.lower()
 
                 best_score_existing = 0
                 for eg in existing_games_lower:
-                    if len(eg) < 3:
+                    if len(eg) < MIN_TITLE_LENGTH:
                         continue
                     if eg in extracted_lower or extracted_lower in eg:
                         best_score_existing = 100
@@ -97,26 +80,25 @@ def main():
                     if score > best_score_existing:
                         best_score_existing = score
 
-                if best_score_existing >= 85:
+                if best_score_existing >= FUZZY_MATCH_THRESHOLD:
                     continue
 
                 is_duplicate = False
                 for seen in seen_new_candidates:
-                    if fuzz.ratio(seen.lower(), extracted_lower) >= 85 or extracted_lower in seen.lower() or seen.lower() in extracted_lower:
+                    if fuzz.ratio(seen.lower(), extracted_lower) >= FUZZY_MATCH_THRESHOLD or extracted_lower in seen.lower() or seen.lower() in extracted_lower:
                         is_duplicate = True
                         break
 
                 if not is_duplicate:
                     seen_new_candidates.add(extracted_name)
-                    new_games_to_add.append({
-                        title_col: extracted_name,
-                        'Score': 'TBD',
-                        'Top 10 Rank': '',
-                        'Top 10 Year': '',
-                        'BGA Review': 'TRUE' if 'BGA' in vid_title or 'Board Game Arena' in vid_title else '',
-                        'Pick of the Week': '',
-                        'Honorable Mention': '',
-                    })
+                    entry = {title_col: extracted_name}
+                    entry['Score'] = NEW_ENTRY_COLUMNS.get('score', '')
+                    entry['Top 10 Rank'] = NEW_ENTRY_COLUMNS.get('top_10_rank', '')
+                    entry['Top 10 Year'] = NEW_ENTRY_COLUMNS.get('top_10_year', '')
+                    entry['BGA Review'] = 'TRUE' if any(kw in vid_title for kw in BGA_DETECTION_KEYWORDS) else ''
+                    entry['Pick of the Week'] = NEW_ENTRY_COLUMNS.get('pick_of_the_week', '')
+                    entry['Honorable Mention'] = NEW_ENTRY_COLUMNS.get('honorable_mention', '')
+                    new_games_to_add.append(entry)
 
         except KeyboardInterrupt:
             raise

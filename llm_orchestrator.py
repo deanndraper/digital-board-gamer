@@ -12,49 +12,18 @@ from google.genai import types
 
 from config import (
     CHANNELS, DB_NAME, GEMINI_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
-    SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS,
+    SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS, EXTRACTION_PROMPT, OUTPUT_JSONL, LOG_FILE,
 )
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
     handlers=[
-        logging.FileHandler('orchestrator.log'),
+        logging.FileHandler(LOG_FILE),
         logging.StreamHandler(),
     ],
 )
 log = logging.getLogger(__name__)
-
-EXTRACTION_PROMPT = """\
-You are an AI tasked with analyzing a board game YouTube video.
-
-Extract the following data points into a strictly formatted JSON object:
-1. A list of games covered in the video. For each game, extract:
-   - "title": The name of the game.
-   - "ranking": The numerical ranking given to the game in this video (e.g. 1 if it is their #1 game). Use null if no rank is given.
-   - "score": The reviewer's personal numeric rating for the game (e.g. 7/10, 8.5/10). Use null if no personal rating is given. IMPORTANT: Do NOT put vote percentages, poll results, or community vote shares here — only the reviewer's own score out of 10.
-   - "vote_percentage": If the video is about awards or polls, the percentage of votes this game received. Use null otherwise.
-   - "award_category": If the game won or was nominated in an award category, the category name (e.g. "Best Casual Game"). Use null otherwise.
-   - "opinion": A brief summary of the reviewer's subjective opinion of this specific game.
-2. "summary": A brief summary of the overall video. (string)
-3. "classification": Choose one of: 'best of year', 'how to play', 'new game including how to play', 'new game including how to play and rating', 'review', 'playthrough', 'other'. (string)
-
-Return ONLY a JSON object matching this schema precisely:
-{
-    "games": [
-        {
-            "title": "Game Name",
-            "ranking": 1,
-            "score": 9.5,
-            "vote_percentage": null,
-            "award_category": null,
-            "opinion": "absolutely fantastic mechanics."
-        }
-    ],
-    "summary": "...",
-    "classification": "..."
-}
-"""
 
 
 def setup_db():
@@ -202,9 +171,8 @@ def export_to_jsonl(conn):
         log.info("No completed records to export.")
         return
 
-    output_file = "Complete_Insights.jsonl"
-    log.info("Exporting %d records to %s", len(rows), output_file)
-    with open(output_file, "w") as f:
+    log.info("Exporting %d records to %s", len(rows), OUTPUT_JSONL)
+    with open(OUTPUT_JSONL, "w") as f:
         for title, url, channel, data in rows:
             entry = json.loads(data)
             entry['_vid_title'] = title

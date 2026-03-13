@@ -3,11 +3,15 @@ import scrapetube
 from fuzzywuzzy import fuzz
 import re
 
-from config import CHANNELS, SPREADSHEET_FILE
+from config import (
+    CHANNELS, SPREADSHEET_FILE,
+    VALIDATION_FUZZY_THRESHOLD, VALIDATION_VIDEO_LIMIT,
+    VALIDATION_OUTPUT_REPORT, VALIDATION_TITLE_PATTERN,
+)
 
 
 def clean_title(title):
-    title = re.sub(r'(?i)\b(review|how to play|top \d+|playthrough|unboxing|tutorial|setup)\b', '', title)
+    title = re.sub(VALIDATION_TITLE_PATTERN, '', title)
     title = re.sub(r'[^\w\s]', '', title)
     return title.strip().lower()
 
@@ -32,7 +36,7 @@ def main():
             videos = scrapetube.get_channel(channel_url=url)
             count = 0
             for video in videos:
-                if count >= 100:
+                if count >= VALIDATION_VIDEO_LIMIT:
                     break
                 count += 1
 
@@ -58,7 +62,7 @@ def main():
                         best_score = score
                         best_match = game
 
-                if best_score < 85:
+                if best_score < VALIDATION_FUZZY_THRESHOLD:
                     missing_reports.append({
                         'Channel': channel_name,
                         'Video Title': vid_title,
@@ -74,8 +78,8 @@ def main():
     report_df = pd.DataFrame(missing_reports)
     if not report_df.empty:
         print(f"Found {len(report_df)} videos that potentially feature missing games.")
-        report_df.to_csv('missing_games_report.csv', index=False)
-        print("Detailed report saved to 'missing_games_report.csv'.")
+        report_df.to_csv(VALIDATION_OUTPUT_REPORT, index=False)
+        print(f"Detailed report saved to '{VALIDATION_OUTPUT_REPORT}'.")
     else:
         print("No missing games found!")
 

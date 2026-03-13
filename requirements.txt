@@ -4,3 +4,4 @@ pandas>=3.0.0
 openpyxl>=3.1.0
 fuzzywuzzy>=0.18.0
 RapidFuzz>=3.0.0
+PyYAML>=6.0

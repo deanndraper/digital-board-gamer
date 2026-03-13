@@ -1,0 +1,158 @@
+# ============================================================================
+# YouTube Channel Scanner — Domain Configuration
+# ============================================================================
+#
+# This file contains ALL use-case-specific values for the scanner pipeline.
+# To adapt the tool for a different domain (e.g. cooking channels, tech
+# reviews), edit this file — no Python changes should be needed.
+#
+# Format notes:
+#   - Multi-line text (prompts) uses YAML block scalar: |
+#   - Regex patterns use plain or single-quoted scalars so backslashes
+#     are treated literally (no double-quote escaping needed).
+#   - Lists use standard YAML syntax: - item
+#
+# The config file path can be overridden via the SCANNER_CONFIG env var.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Channels to scrape
+# ---------------------------------------------------------------------------
+channels:
+  Digital Board Gamer: 'https://www.youtube.com/@DigitalBoardGamer'
+  Game-Night with Saisha: 'https://www.youtube.com/@GameNightwithSaisha'
+  Peaky Boardgamer: 'https://www.youtube.com/@PeakyBoardgamer'
+
+# ---------------------------------------------------------------------------
+# LLM / Gemini settings
+# ---------------------------------------------------------------------------
+llm:
+  model: 'gemini-2.5-flash'
+  rate_limit_seconds: 2
+
+# ---------------------------------------------------------------------------
+# Orchestrator settings
+# ---------------------------------------------------------------------------
+orchestrator:
+  db_name: 'orchestrator_state.db'
+  videos_per_channel: 50
+  log_file: 'orchestrator.log'
+  output_jsonl: 'Complete_Insights.jsonl'
+
+  # Video IDs to unconditionally skip (known off-topic content)
+  skip_video_ids:
+    - 'TqX3y5qAhLg'   # "Which Dice Tower Host Has the Most Top 100 Games on BGA? Take 2!"
+    - 'vdom0yH7-NQ'   # "Board Game Creators Take on 7 Wonders Dice"
+
+  # Generic title keywords — videos matching any of these are skipped
+  skip_title_keywords:
+    - 'channel update'
+    - 'vlog'
+    - 'q&a'
+    - 'giveaway'
+    - 'unboxing haul'
+    - 'live stream'
+
+  # The prompt sent to Gemini for each video
+  extraction_prompt: |
+    You are an AI tasked with analyzing a board game YouTube video.
+
+    Extract the following data points into a strictly formatted JSON object:
+    1. A list of games covered in the video. For each game, extract:
+       - "title": The name of the game.
+       - "ranking": The numerical ranking given to the game in this video (e.g. 1 if it is their #1 game). Use null if no rank is given.
+       - "score": The reviewer's personal numeric rating for the game (e.g. 7/10, 8.5/10). Use null if no personal rating is given. IMPORTANT: Do NOT put vote percentages, poll results, or community vote shares here — only the reviewer's own score out of 10.
+       - "vote_percentage": If the video is about awards or polls, the percentage of votes this game received. Use null otherwise.
+       - "award_category": If the game won or was nominated in an award category, the category name (e.g. "Best Casual Game"). Use null otherwise.
+       - "opinion": A brief summary of the reviewer's subjective opinion of this specific game.
+    2. "summary": A brief summary of the overall video. (string)
+    3. "classification": Choose one of: 'best of year', 'how to play', 'new game including how to play', 'new game including how to play and rating', 'review', 'playthrough', 'other'. (string)
+
+    Return ONLY a JSON object matching this schema precisely:
+    {
+        "games": [
+            {
+                "title": "Game Name",
+                "ranking": 1,
+                "score": 9.5,
+                "vote_percentage": null,
+                "award_category": null,
+                "opinion": "absolutely fantastic mechanics."
+            }
+        ],
+        "summary": "...",
+        "classification": "..."
+    }
+
+# ---------------------------------------------------------------------------
+# Extraction settings (extract_all.py)
+# ---------------------------------------------------------------------------
+extraction:
+  spreadsheet_file: 'Comprehensive Game Export and Analysis.xlsx'
+  output_file: 'Updated_Comprehensive_Game_Export.xlsx'
+  fuzzy_match_threshold: 85
+  min_title_length: 3
+
+  # Regex patterns removed from video titles to isolate the game name.
+  # Each pattern is applied with re.sub(pattern, '', title) using (?i) flag.
+  title_cleaning_patterns:
+    - '(?i)how to play'
+    - '(?i)review'
+    - '(?i)top \d+'
+    - '(?i)playthrough'
+    - '(?i)unboxing'
+    - '(?i)tutorial'
+    - '(?i)setup'
+    - '(?i)board game arena'
+    - '(?i)bga'
+    - '(?i)full teach'
+    - '(?i)visuals'
+    - '(?i)1 minute overview'
+    - '(?i)overview'
+    - '(?i)on board game arena'
+    - '(?i)relaxing solo playthrough'
+    - '(?i)perfect for winding down'
+    - '(?i)in \d+ mins?'
+    - '(?i)in \d+ minutes?'
+    - '(?i)game overview'
+
+  # Regex used to split the cleaned title on separators
+  title_split_separators: '[-–|:!+,]|\b(Re-upload|Preview|Update)\b'
+
+  # Short words that are never valid game titles on their own
+  excluded_short_words:
+    - 'top'
+    - 'the'
+    - 'and'
+    - 'with'
+
+  # Keywords in video titles that trigger the "BGA Review" flag
+  bga_detection_keywords:
+    - 'BGA'
+    - 'Board Game Arena'
+
+  # Column schema for new entries added to the spreadsheet
+  new_entry_columns:
+    score: 'TBD'
+    top_10_rank: ''
+    top_10_year: ''
+    pick_of_the_week: ''
+    honorable_mention: ''
+
+# ---------------------------------------------------------------------------
+# Validation settings (validate_data.py)
+# ---------------------------------------------------------------------------
+validation:
+  fuzzy_threshold: 85
+  video_limit: 100
+  output_report: 'missing_games_report.csv'
+
+  # Regex pattern for cleaning titles during validation
+  title_cleaning_pattern: '(?i)\b(review|how to play|top \d+|playthrough|unboxing|tutorial|setup)\b'
+
+# ---------------------------------------------------------------------------
+# Test settings (test_gemini.py)
+# ---------------------------------------------------------------------------
+testing:
+  video_url: 'https://www.youtube.com/watch?v=EjVvUkZHAes'
+  prompt: 'What board game is discussed in this video? Reply in one sentence.'
