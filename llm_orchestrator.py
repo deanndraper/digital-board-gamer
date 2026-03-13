@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import re
 import sys
 import time
 import logging
@@ -13,6 +14,7 @@ from google.genai import types
 from config import (
     CHANNELS, DB_NAME, GEMINI_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
     SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS, EXTRACTION_PROMPT, OUTPUT_JSONL, LOG_FILE,
+    PREFILTER_ENABLED, PREFILTER_MODEL, PREFILTER_PROMPT,
 )
 
 logging.basicConfig(
@@ -42,19 +44,58 @@ def setup_db():
         )
     ''')
     conn.commit()
+    try:
+        c.execute("ALTER TABLE videos ADD COLUMN description_snippet TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     return conn
 
 
-def fetch_candidates(conn):
+def _parse_retry_delay(error):
+    """Extract retry delay in seconds from a Google API 429 error, default 60s."""
+    err_str = str(error)
+    match = re.search(r'retryDelay.*?(\d+)', err_str)
+    if match:
+        return int(match.group(1)) + 2  # add small buffer
+    return 60
+
+
+def _call_with_retry(fn, max_retries=5):
+    """Call fn(), retrying on 429 rate-limit errors with parsed delay.
+    Raises immediately on daily quota exhaustion since retrying won't help.
+    """
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            err_str = str(e)
+            if '429' in err_str:
+                if 'PerDay' in err_str:
+                    log.error("Daily quota exhausted. Try again tomorrow or check billing.")
+                    raise
+                if attempt < max_retries - 1:
+                    wait = _parse_retry_delay(e)
+                    log.warning("Rate limited (429). Waiting %ds before retry %d/%d...",
+                                wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                else:
+                    raise
+            else:
+                raise
+
+
+def fetch_candidates(conn, limit=None):
     log.info("Fetching video candidates from channels...")
     c = conn.cursor()
+    max_videos = limit if limit else VIDEOS_PER_CHANNEL
     for channel, url in CHANNELS.items():
-        log.info("Scraping %s...", channel)
+        log.info("Scraping %s (max %d videos)...", channel, max_videos)
         try:
-            videos = scrapetube.get_channel(channel_url=url)
+            videos = scrapetube.get_channel(channel_url=url, limit=max_videos)
             count = 0
             for video in videos:
-                if count >= VIDEOS_PER_CHANNEL:
+                if count >= max_videos:
                     break
 
                 vid_id = video.get('videoId')
@@ -69,8 +110,10 @@ def fetch_candidates(conn):
                 title = video.get('title', {}).get('runs', [{}])[0].get('text', 'Unknown Title')
                 vid_url = f"https://www.youtube.com/watch?v={vid_id}"
 
-                # Extract published date from scrapetube metadata
+                # Extract published date and description snippet from scrapetube metadata
                 published_text = video.get('publishedTimeText', {}).get('simpleText', '')
+                desc_runs = video.get('descriptionSnippet', {}).get('runs', [])
+                description_snippet = ' '.join(r.get('text', '') for r in desc_runs).strip() or None
 
                 # Skip known off-topic videos by ID or generic title keywords
                 status = 'PENDING'
@@ -80,9 +123,9 @@ def fetch_candidates(conn):
                     status = 'SKIPPED_BY_FILTER'
 
                 c.execute('''
-                    INSERT INTO videos (video_id, title, url, channel, status, published_date)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (vid_id, title, vid_url, channel, status, published_text))
+                    INSERT INTO videos (video_id, title, url, channel, status, published_date, description_snippet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (vid_id, title, vid_url, channel, status, published_text, description_snippet))
             conn.commit()
         except KeyboardInterrupt:
             raise
@@ -92,21 +135,78 @@ def fetch_candidates(conn):
 
 def extract_with_gemini(client, video_url):
     """Send the YouTube URL directly to Gemini for analysis — no transcript API needed."""
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=types.Content(
-            parts=[
-                types.Part(
-                    file_data=types.FileData(file_uri=video_url),
-                ),
-                types.Part(text=EXTRACTION_PROMPT),
-            ],
-        ),
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-        ),
-    )
-    return response.text
+    def _call():
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=types.Content(
+                parts=[
+                    types.Part(
+                        file_data=types.FileData(file_uri=video_url),
+                    ),
+                    types.Part(text=EXTRACTION_PROMPT),
+                ],
+            ),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        return response.text
+    return _call_with_retry(_call)
+
+
+def prefilter_pending(conn, limit=None):
+    """Use a cheap text-only LLM call to reject non-candidate videos."""
+    if not PREFILTER_ENABLED:
+        log.info("Pre-filter disabled, skipping.")
+        return
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        log.error("Set GEMINI_API_KEY to run pre-filter.")
+        return
+
+    client = genai.Client(api_key=api_key)
+    c = conn.cursor()
+
+    query = "SELECT video_id, title, description_snippet FROM videos WHERE status = 'PENDING'"
+    if limit:
+        query += f" LIMIT {int(limit)}"
+    c.execute(query)
+    rows = c.fetchall()
+
+    if not rows:
+        log.info("No PENDING videos to pre-filter.")
+        return
+
+    log.info("Pre-filtering %d PENDING videos...", len(rows))
+    for idx, (vid_id, title, desc) in enumerate(rows):
+        prompt = PREFILTER_PROMPT.format(
+            title=title,
+            description=desc or '(no description available)',
+        )
+        try:
+            def _call(p=prompt):
+                return client.models.generate_content(
+                    model=PREFILTER_MODEL,
+                    contents=p,
+                )
+            response = _call_with_retry(_call)
+            answer = response.text.strip()
+            if answer.upper().startswith('NO'):
+                log.info("[%d/%d] REJECTED: %s — %s", idx + 1, len(rows), title, answer)
+                c.execute(
+                    "UPDATE videos SET status = 'PREFILTER_REJECTED', error_msg = ? WHERE video_id = ?",
+                    (answer, vid_id),
+                )
+            else:
+                log.info("[%d/%d] PASSED: %s — %s", idx + 1, len(rows), title, answer)
+            conn.commit()
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            log.warning("Pre-filter failed for %s, leaving as PENDING: %s", title, e)
+
+        time.sleep(1)
 
 
 def process_pending(conn, retry_failed=False, limit=None):
@@ -199,7 +299,8 @@ def main():
             limit = int(arg)
 
     conn = setup_db()
-    fetch_candidates(conn)
+    fetch_candidates(conn, limit=limit)
+    prefilter_pending(conn, limit=limit)
     process_pending(conn, retry_failed=retry_failed, limit=limit)
     export_to_jsonl(conn)
     print_status(conn)

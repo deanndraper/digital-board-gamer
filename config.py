@@ -28,6 +28,11 @@ CHANNELS = _cfg['channels']
 GEMINI_MODEL = _cfg['llm']['model']
 RATE_LIMIT_SECONDS = _cfg['llm']['rate_limit_seconds']
 
+_prefilter = _cfg['llm'].get('prefilter', {})
+PREFILTER_ENABLED = _prefilter.get('enabled', False)
+PREFILTER_MODEL = _prefilter.get('model', 'gemini-2.0-flash-lite')
+PREFILTER_PROMPT = _prefilter.get('prompt', '')
+
 # -- Orchestrator ------------------------------------------------------------
 _orch = _cfg['orchestrator']
 DB_NAME = _orch['db_name']
