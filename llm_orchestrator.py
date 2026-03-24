@@ -7,14 +7,14 @@ import time
 import logging
 from datetime import datetime
 
+import anthropic
 import scrapetube
-from google import genai
-from google.genai import types
+from youtube_transcript_api import YouTubeTranscriptApi
 
 from config import (
-    CHANNELS, DB_NAME, GEMINI_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
+    CHANNELS, DB_NAME, LLM_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
     SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS, EXTRACTION_PROMPT, OUTPUT_JSONL, LOG_FILE,
-    PREFILTER_ENABLED, PREFILTER_MODEL, PREFILTER_PROMPT,
+    PREFILTER_ENABLED, PREFILTER_MODEL, PREFILTER_PROMPT, MAX_TRANSCRIPT_WORDS,
 )
 
 logging.basicConfig(
@@ -52,31 +52,48 @@ def setup_db():
     return conn
 
 
-def _parse_retry_delay(error):
-    """Extract retry delay in seconds from a Google API 429 error, default 60s."""
-    err_str = str(error)
-    match = re.search(r'retryDelay.*?(\d+)', err_str)
-    if match:
-        return int(match.group(1)) + 2  # add small buffer
-    return 60
+def trim_transcript(text, max_words):
+    """Trim long transcripts, keeping the first 1000 and last (max-1000) words.
+
+    Rationale: reviewers state game names at the start and scores/verdicts at
+    the end, so we preserve both bookends.
+    """
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    head_size = 1000
+    tail_size = max_words - head_size
+    head = ' '.join(words[:head_size])
+    tail = ' '.join(words[-tail_size:])
+    return head + '\n\n[... transcript truncated ...]\n\n' + tail
+
+
+def fetch_transcript(video_id):
+    """Fetch the transcript for a YouTube video using youtube-transcript-api."""
+    api = YouTubeTranscriptApi()
+    transcript = api.fetch(video_id)
+    text = ' '.join(snippet.text for snippet in transcript)
+    return text
 
 
 def _call_with_retry(fn, max_retries=5):
-    """Call fn(), retrying on 429 rate-limit errors with parsed delay.
-    Raises immediately on daily quota exhaustion since retrying won't help.
-    """
+    """Call fn(), retrying on rate-limit errors with exponential backoff."""
     for attempt in range(max_retries):
         try:
             return fn()
-        except Exception as e:
-            err_str = str(e)
-            if '429' in err_str:
-                if 'PerDay' in err_str:
-                    log.error("Daily quota exhausted. Try again tomorrow or check billing.")
-                    raise
+        except anthropic.RateLimitError as e:
+            if attempt < max_retries - 1:
+                wait = min(2 ** attempt * 10, 120)
+                log.warning("Rate limited. Waiting %ds before retry %d/%d...",
+                            wait, attempt + 1, max_retries)
+                time.sleep(wait)
+            else:
+                raise
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529:  # overloaded
                 if attempt < max_retries - 1:
-                    wait = _parse_retry_delay(e)
-                    log.warning("Rate limited (429). Waiting %ds before retry %d/%d...",
+                    wait = min(2 ** attempt * 10, 120)
+                    log.warning("API overloaded (529). Waiting %ds before retry %d/%d...",
                                 wait, attempt + 1, max_retries)
                     time.sleep(wait)
                 else:
@@ -133,24 +150,23 @@ def fetch_candidates(conn, limit=None):
             log.exception("Error fetching %s", channel)
 
 
-def extract_with_gemini(client, video_url):
-    """Send the YouTube URL directly to Gemini for analysis — no transcript API needed."""
+def extract_with_claude(client, title, transcript_text):
+    """Send the transcript + title to Claude for structured extraction."""
+    prompt = (
+        f"Video title: {title}\n\n"
+        f"Transcript:\n{transcript_text}\n\n"
+        f"{EXTRACTION_PROMPT}\n"
+        "Return ONLY the JSON object, no markdown fences or extra text."
+    )
+
     def _call():
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=types.Content(
-                parts=[
-                    types.Part(
-                        file_data=types.FileData(file_uri=video_url),
-                    ),
-                    types.Part(text=EXTRACTION_PROMPT),
-                ],
-            ),
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
+        response = client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
         )
-        return response.text
+        return response.content[0].text
+
     return _call_with_retry(_call)
 
 
@@ -160,12 +176,12 @@ def prefilter_pending(conn, limit=None):
         log.info("Pre-filter disabled, skipping.")
         return
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        log.error("Set GEMINI_API_KEY to run pre-filter.")
+        log.error("Set ANTHROPIC_API_KEY to run pre-filter.")
         return
 
-    client = genai.Client(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key)
     c = conn.cursor()
 
     query = "SELECT video_id, title, description_snippet FROM videos WHERE status = 'PENDING'"
@@ -186,12 +202,13 @@ def prefilter_pending(conn, limit=None):
         )
         try:
             def _call(p=prompt):
-                return client.models.generate_content(
+                return client.messages.create(
                     model=PREFILTER_MODEL,
-                    contents=p,
+                    max_tokens=256,
+                    messages=[{"role": "user", "content": p}],
                 )
             response = _call_with_retry(_call)
-            answer = response.text.strip()
+            answer = response.content[0].text.strip()
             if answer.upper().startswith('NO'):
                 log.info("[%d/%d] REJECTED: %s — %s", idx + 1, len(rows), title, answer)
                 c.execute(
@@ -210,12 +227,12 @@ def prefilter_pending(conn, limit=None):
 
 
 def process_pending(conn, retry_failed=False, limit=None):
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        log.error("Set GEMINI_API_KEY environment variable to run LLM extraction.")
+        log.error("Set ANTHROPIC_API_KEY environment variable to run LLM extraction.")
         return
 
-    client = genai.Client(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key)
     c = conn.cursor()
 
     statuses = ['PENDING']
@@ -234,8 +251,22 @@ def process_pending(conn, retry_failed=False, limit=None):
     for idx, (vid_id, title, url, channel, published_date) in enumerate(rows):
         log.info("[%d/%d] Processing: %s", idx + 1, len(rows), title)
 
+        # Step 1: Fetch transcript
         try:
-            llm_result_str = extract_with_gemini(client, url)
+            transcript_text = fetch_transcript(vid_id)
+            transcript_text = trim_transcript(transcript_text, MAX_TRANSCRIPT_WORDS)
+        except Exception as e:
+            log.warning(" -> Transcript fetch failed for %s: %s", title, e)
+            c.execute(
+                "UPDATE videos SET status = 'FAILED_TRANSCRIPT', error_msg = ? WHERE video_id = ?",
+                (str(e), vid_id),
+            )
+            conn.commit()
+            continue
+
+        # Step 2: Send transcript to Claude for extraction
+        try:
+            llm_result_str = extract_with_claude(client, title, transcript_text)
             llm_data = json.loads(llm_result_str)
 
             # Inject our known metadata

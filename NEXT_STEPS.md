@@ -28,7 +28,7 @@ Scrapes YouTube channels for board game content, sends each video URL to Gemini 
 source .venv/bin/activate
 
 # Set the API key
-export GEMINI_API_KEY="AIzaSyBfOKddr2rjzenMHfnjOPNAdcQzZDIaGeU"
+export ANTHROPIC_API_KEY="your-key-here"
 
 # Process 10 at a time (recommended to monitor quality)
 python llm_orchestrator.py --limit=10

@@ -24,13 +24,14 @@ except FileNotFoundError:
 # -- Channels ---------------------------------------------------------------
 CHANNELS = _cfg['channels']
 
-# -- LLM / Gemini -----------------------------------------------------------
-GEMINI_MODEL = _cfg['llm']['model']
+# -- LLM --------------------------------------------------------------------
+LLM_MODEL = _cfg['llm']['model']
 RATE_LIMIT_SECONDS = _cfg['llm']['rate_limit_seconds']
+MAX_TRANSCRIPT_WORDS = _cfg['llm'].get('max_transcript_words', 12000)
 
 _prefilter = _cfg['llm'].get('prefilter', {})
 PREFILTER_ENABLED = _prefilter.get('enabled', False)
-PREFILTER_MODEL = _prefilter.get('model', 'gemini-2.0-flash-lite')
+PREFILTER_MODEL = _prefilter.get('model', 'claude-haiku-4-5-20251001')
 PREFILTER_PROMPT = _prefilter.get('prompt', '')
 
 # -- Orchestrator ------------------------------------------------------------
@@ -62,7 +63,7 @@ VALIDATION_VIDEO_LIMIT = _val['video_limit']
 VALIDATION_OUTPUT_REPORT = _val['output_report']
 VALIDATION_TITLE_PATTERN = _val['title_cleaning_pattern']
 
-# -- Testing (test_gemini.py) ------------------------------------------------
+# -- Testing (test_claude.py) ------------------------------------------------
 _test = _cfg['testing']
 TEST_VIDEO_URL = _test['video_url']
 TEST_PROMPT = _test['prompt']

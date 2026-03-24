@@ -24,19 +24,21 @@ channels:
   Peaky Boardgamer: 'https://www.youtube.com/@PeakyBoardgamer'
 
 # ---------------------------------------------------------------------------
-# LLM / Gemini settings
+# LLM settings
 # ---------------------------------------------------------------------------
 llm:
-  model: 'gemini-2.5-flash'
-  rate_limit_seconds: 2
+  model: 'claude-sonnet-4-6'
+  rate_limit_seconds: 10
+  max_transcript_words: 12000
   prefilter:
     enabled: true
-    model: 'gemini-2.0-flash-lite'
+    model: 'claude-haiku-4-5-20251001'
     prompt: |
       Given this YouTube video title and description, is this video a board game
-      review, ranking, top-10 or top-X list where X is the number of games ranked. 
-      Answer only YES or NO followed by a brief reason.  Answer NO if it a playthough
-      or preview. 
+      review, ranking, top-10 or top-X list where X is the number of games ranked.
+      Answer YES if the title contains words like "review", "ranking", or "top 10".
+      Only answer NO if it is clearly a playthrough, preview, or unrelated content.
+      Answer only YES or NO followed by a brief reason.
 
       Title: {title}
       Description: {description}
@@ -64,9 +66,9 @@ orchestrator:
     - 'unboxing haul'
     - 'live stream'
 
-  # The prompt sent to Gemini for each video
+  # The prompt sent to Claude for each video transcript
   extraction_prompt: |
-    You are an AI tasked with analyzing a board game YouTube video.
+    You are an AI tasked with analyzing a board game YouTube video transcript.
 
     Extract the following data points into a strictly formatted JSON object:
     1. A list of games covered in the video. For each game, extract:
@@ -162,7 +164,7 @@ validation:
   title_cleaning_pattern: '(?i)\b(review|how to play|top \d+|playthrough|unboxing|tutorial|setup)\b'
 
 # ---------------------------------------------------------------------------
-# Test settings (test_gemini.py)
+# Test settings (test_claude.py)
 # ---------------------------------------------------------------------------
 testing:
   video_url: 'https://www.youtube.com/watch?v=EjVvUkZHAes'
