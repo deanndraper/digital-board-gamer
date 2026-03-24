@@ -58,24 +58,25 @@ architecture:
 
     - name: extract
       description: >
-        Send each PENDING video URL to Gemini for structured extraction.
-        Gemini can ingest YouTube URLs directly as file_data — no
-        transcript API or yt-dlp needed.
+        For each PENDING video, fetch the transcript via
+        youtube-transcript-api, then send the transcript text to
+        Claude for structured JSON extraction.
       key_decisions:
-        - use_gemini_native_video_input: true
+        - transcript_fetching: youtube-transcript-api
           reason: >
-            Gemini accepts YouTube URLs via types.Part(file_data=...).
-            This is drastically simpler than downloading transcripts.
-            Earlier attempts with yt-dlp and transcript APIs were
-            abandoned in favor of this approach.
-        - response_mime_type: application/json
+            Fetches auto-generated or manual captions directly.
+            Long transcripts are trimmed (first 1000 + last ~11000
+            words) to stay within token limits while preserving the
+            intro (game names) and conclusion (scores/verdicts).
+        - llm: Claude (Sonnet for extraction, Haiku for prefilter)
           reason: >
-            Forces the LLM to return valid JSON, eliminating the need
-            to parse markdown code fences or handle malformed output.
-        - rate_limiting: 2 seconds between calls
+            Claude produces reliable structured JSON output. The prompt
+            instructs "Return ONLY the JSON object, no markdown fences"
+            and the response is parsed directly with json.loads().
+        - rate_limiting: 10 seconds between calls (configurable)
           reason: >
-            Avoids hitting Gemini API rate limits. Adjust based on your
-            quota tier.
+            Avoids hitting Anthropic API rate limits. Uses exponential
+            backoff retry (up to 5 attempts) on 429 and 529 errors.
 
     - name: export
       description: >
@@ -101,13 +102,15 @@ state_management:
       - published_date: TEXT
       - extracted_data: TEXT   # full JSON blob from LLM
       - error_msg: TEXT        # error details on failure
+      - description_snippet: TEXT  # video description (used by prefilter)
 
   statuses:
     PENDING: Not yet processed
     COMPLETED: Successfully extracted
     FAILED_LLM: LLM call failed (network, quota, bad JSON)
-    FAILED_TRANSCRIPT: Transcript retrieval failed (legacy, before native video input)
+    FAILED_TRANSCRIPT: Transcript fetch failed (private, unavailable, or no captions)
     SKIPPED_BY_FILTER: Excluded by skip-ID or keyword filter
+    PREFILTER_REJECTED: Rejected by the cheap prefilter model (Haiku)
 
   benefits:
     - Resumability: interrupt the run at any time; re-run picks up where it left off.
@@ -134,22 +137,23 @@ prompt_engineering:
         was confused with "vote_percentage" (poll/community share). Adding
         an explicit rule — "Do NOT put vote percentages here — only the
         reviewer's own score" — fixed the confusion.
-    - name: Use structured output mode
+    - name: Instruct JSON-only output in the prompt
       detail: >
-        Setting response_mime_type="application/json" on the Gemini call
-        forces valid JSON output. This is far more reliable than asking
-        the model to return JSON in the prompt alone.
+        The extraction prompt ends with "Return ONLY the JSON object, no
+        markdown fences or extra text." The response is parsed directly
+        with json.loads(). Claude reliably follows this instruction.
     - name: Provide an exhaustive enum for classification
       detail: >
         When asking the LLM to classify content, list every valid value
         explicitly. Open-ended classification leads to inconsistent labels.
     - name: Expect hallucination in metadata
       detail: >
-        Gemini fabricated data for years before the channel existed
-        (e.g., invented 2018-2024 game reviews for a channel that started
-        in Feb 2025). NEVER trust LLM-generated metadata (dates, scores,
-        rankings) without cross-referencing against a known source.
-        The suspect_games_review.md file documented 70+ fabricated entries.
+        The original Gemini-based pipeline fabricated 70+ game entries
+        with plausible scores for years before the channel existed.
+        NEVER trust LLM-generated metadata (dates, scores, rankings)
+        without cross-referencing against a known source. The migration
+        to Claude with transcript-based extraction reduced this risk,
+        but validation remains essential.
     - name: Inject known metadata yourself
       detail: >
         Don't ask the LLM for things you already know (video URL, channel
@@ -190,10 +194,14 @@ validation:
 # 5. CONFIGURATION PATTERN
 # ---------------------------------------------------------------------------
 configuration:
-  file: config.py
+  files: scanner_config.yaml (default), boardgameco_config.yaml (alternate)
+  loader: config.py reads YAML and exposes module-level constants
+  switch_config: SCANNER_CONFIG=boardgameco_config.yaml python llm_orchestrator.py
   principle: >
-    Separate all tunable values from logic. The orchestrator imports
-    constants; adapting to a new domain means editing config.py only.
+    All domain-specific values live in YAML config files. The orchestrator
+    imports constants from config.py, which reads the active YAML file.
+    Adapting to a new domain means creating a new YAML config — no Python
+    changes needed.
 
   parameters:
     - name: CHANNELS
@@ -202,23 +210,31 @@ configuration:
       example:
         Digital Board Gamer: "https://www.youtube.com/@DigitalBoardGamer"
 
-    - name: GEMINI_MODEL
+    - name: LLM_MODEL
       type: str
-      description: Which Gemini model to use
-      example: gemini-2.5-flash
+      description: Which Claude model to use
+      example: claude-sonnet-4-6
       note: >
-        Flash is fast and cheap. Use Pro for higher accuracy on
-        complex prompts if budget allows.
+        Sonnet for extraction, Haiku for prefilter.
+        Transcripts are fetched via youtube-transcript-api.
 
     - name: VIDEOS_PER_CHANNEL
       type: int
       description: Max videos to fetch per channel per run
       example: 50
 
+    - name: MAX_TRANSCRIPT_WORDS
+      type: int
+      description: Maximum transcript words to send to the LLM
+      example: 12000
+      note: >
+        Long transcripts are trimmed: first 1000 words + last
+        (max - 1000) words, preserving intro and conclusion.
+
     - name: RATE_LIMIT_SECONDS
       type: int
       description: Pause between LLM calls
-      example: 2
+      example: 10
 
     - name: SKIP_VIDEO_IDS
       type: "set[str]"
@@ -285,7 +301,8 @@ error_handling:
 dependencies:
   python: ">=3.11"
   packages:
-    - google-genai: ">=1.65.0   # Gemini SDK with native video support"
+    - anthropic: ">=0.42.0       # Claude SDK"
+    - youtube-transcript-api: ">=1.2.0  # YouTube transcript fetcher"
     - scrapetube: ">=2.6.0      # YouTube channel scraper (no API key)"
     - pandas: ">=3.0.0          # Spreadsheet cross-referencing"
     - openpyxl: ">=3.1.0        # Excel read/write for pandas"
@@ -293,7 +310,7 @@ dependencies:
     - RapidFuzz: ">=3.0.0       # Fast C backend for fuzzywuzzy"
 
   environment_variables:
-    GEMINI_API_KEY: Required. Set before running.
+    ANTHROPIC_API_KEY: Required. Set before running.
 
   virtual_environment: >
     Use a standard venv. The .gitignore should exclude .venv/, __pycache__/,
@@ -308,8 +325,8 @@ adaptation_guide:
 
   step_1_define_channels:
     action: >
-      Edit config.py. Replace CHANNELS with your target channel names
-      and URLs.
+      Create a new YAML config file (or copy an existing one). Replace
+      the channels section with your target channel names and URLs.
     example:
       CHANNELS:
         Babish Culinary Universe: "https://www.youtube.com/@BabishCulinaryUniverse"
@@ -317,9 +334,9 @@ adaptation_guide:
 
   step_2_design_extraction_schema:
     action: >
-      Rewrite EXTRACTION_PROMPT in llm_orchestrator.py. Define the fields
-      relevant to your domain. Be specific about types, nullability, and
-      disambiguation rules.
+      Rewrite the extraction_prompt in your YAML config file. Define the
+      fields relevant to your domain. Be specific about types, nullability,
+      and disambiguation rules.
     example_fields_for_cooking:
       - recipe_name: str
       - cuisine: str
@@ -357,11 +374,11 @@ adaptation_guide:
 # ---------------------------------------------------------------------------
 key_lessons:
   - id: L01
-    lesson: Gemini can ingest YouTube URLs directly — skip transcript APIs
+    lesson: youtube-transcript-api is lightweight and reliable for caption fetching
     detail: >
-      Using types.Part(file_data=types.FileData(file_uri=youtube_url))
-      eliminates the entire transcript download pipeline. This was the
-      biggest simplification in the project.
+      Fetches auto-generated or manual captions without needing yt-dlp
+      or a YouTube Data API key. The pipeline trims long transcripts to
+      preserve the intro (game names) and conclusion (scores/verdicts).
 
   - id: L02
     lesson: SQLite is the ideal state store for batch LLM pipelines
@@ -380,9 +397,10 @@ key_lessons:
   - id: L04
     lesson: LLMs hallucinate structured data convincingly
     detail: >
-      Gemini fabricated 70+ game entries with plausible scores and
-      rankings for years before the channel existed. Always validate
-      LLM output against an independent source.
+      The original Gemini-based pipeline fabricated 70+ game entries
+      with plausible scores for years before the channel existed.
+      Transcript-based extraction with Claude reduced this risk, but
+      always validate LLM output against an independent source.
 
   - id: L05
     lesson: Inject metadata — don't extract it
@@ -392,11 +410,11 @@ key_lessons:
       Asking the LLM to extract them invites errors.
 
   - id: L06
-    lesson: Force JSON output mode on the API
+    lesson: Prompt-level JSON instructions work well with Claude
     detail: >
-      response_mime_type="application/json" is more reliable than
-      prompt instructions alone. It eliminates markdown fences,
-      trailing text, and malformed JSON.
+      Ending the prompt with "Return ONLY the JSON object, no markdown
+      fences or extra text" produces clean, parseable JSON from Claude.
+      The response is fed directly to json.loads() without cleanup.
 
   - id: L07
     lesson: scrapetube is the simplest YouTube channel scraper
@@ -433,9 +451,22 @@ key_lessons:
       scripts connected by shell pipelines.
 
   - id: L12
-    lesson: The yt-dlp transcript approach was abandoned for good reason
+    lesson: Exponential backoff is essential for API reliability
     detail: >
-      Early attempts used yt-dlp to download auto-generated subtitles
-      and then fed the text to the LLM. This added complexity (shell
-      scripts, file management, subtitle parsing) and produced worse
-      results than Gemini's native video understanding.
+      The pipeline retries on 429 (rate limit) and 529 (overloaded)
+      errors with exponential backoff (10s, 20s, 40s, 80s, 120s cap).
+      This handles transient API issues without manual intervention.
+
+  - id: L13
+    lesson: A cheap prefilter model saves money on extraction
+    detail: >
+      Using Haiku to classify videos as in-scope (YES/NO) before
+      sending transcripts to Sonnet for full extraction avoids
+      spending on clearly off-topic content (playthroughs, vlogs, etc.).
+
+  - id: L14
+    lesson: Externalize all domain config to YAML
+    detail: >
+      Moving channels, prompts, skip lists, and model names to YAML
+      config files means adding a new channel or domain requires zero
+      Python changes. Use SCANNER_CONFIG env var to switch configs.
