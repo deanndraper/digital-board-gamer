@@ -162,10 +162,16 @@ def extract_with_claude(client, title, transcript_text):
     def _call():
         response = client.messages.create(
             model=LLM_MODEL,
-            max_tokens=4096,
+            max_tokens=16384,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text
+        text = response.content[0].text.strip()
+        # Strip markdown fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3].strip()
+        return text
 
     return _call_with_retry(_call)
 
