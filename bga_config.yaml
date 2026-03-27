@@ -1,0 +1,16 @@
+# ============================================================================
+# BGA Game Scraper — Configuration
+# ============================================================================
+# Scrapes Board Game Arena for the most popular games and their metadata.
+# Independent from the YouTube channel scanner pipeline.
+# ============================================================================
+
+bga:
+  gamelist_url: 'https://en.boardgamearena.com/gamelist'
+  gamepanel_url: 'https://en.boardgamearena.com/gamepanel?game={game_id}'
+  top_n_games: 200
+  rate_limit_seconds: 3
+  db_name: 'bga_games.db'
+  output_jsonl: 'bga_games.jsonl'
+  log_file: 'bga_scraper.log'
+  user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
