@@ -1,106 +1,93 @@
-# Digital Board Gamer — Next Steps
+# Digital Board Gamer — Project Overview
 
-## Project Overview
+## What This Project Does
 
-Scrapes YouTube channels for board game content, sends each video URL to Gemini for structured data extraction, and exports results to `Complete_Insights.jsonl`.
+Scrapes YouTube board game channels, extracts structured game data using Claude, and publishes results to a static website. Also scrapes Board Game Arena and BoardGameGeek for game metadata.
 
-**Channels:** Digital Board Gamer, Game-Night with Saisha, Peaky Boardgamer
+**Live site:** https://games.transformativehelp.com/
 
-## Current State
+## Pipelines
 
-| Status            | Count |
-|-------------------|-------|
-| COMPLETED         | 9     |
-| PENDING           | 139   |
-| SKIPPED_BY_FILTER | 2     |
+### 1. YouTube Channel Scanner
+Extracts game reviews, rankings, and opinions from video transcripts using Claude (Sonnet for extraction, Haiku for prefiltering).
 
-- 9 videos already processed with the current prompt schema
-- 139 videos awaiting processing (includes 9 that were reset for schema consistency)
-- 2 known off-topic videos explicitly skipped via `SKIP_VIDEO_IDS` in `config.py`
-- Output file: `Complete_Insights.jsonl` (9 clean records)
-
-## What To Do Next
-
-### 1. Process the next batch of videos
+**Channels (default config):** Digital Board Gamer, Game-Night with Saisha, Peaky Boardgamer
+**Alternate config:** BoardGameCo (@boardgameco)
 
 ```bash
-# Activate the virtual environment
+# Run default 3-channel pipeline
 source .venv/bin/activate
-
-# Set the API key
 export ANTHROPIC_API_KEY="your-key-here"
-
-# Process 10 at a time (recommended to monitor quality)
-python llm_orchestrator.py --limit=10
-
-# Or process all 139 remaining at once
 python llm_orchestrator.py
+
+# Run BoardGameCo pipeline
+SCANNER_CONFIG=boardgameco_config.yaml python llm_orchestrator.py
+
+# Retry failed videos
+python llm_orchestrator.py --retry
+
+# Limit processing
+python llm_orchestrator.py --limit=10
 ```
 
-The script will automatically:
-1. Scrape channels for any new videos (adds to DB if not already present)
-2. Send each PENDING video to Gemini for extraction
-3. Export all COMPLETED records to `Complete_Insights.jsonl`
-4. Print a status summary
-
-### 2. Retry any failed videos
+### 2. BGA Game Scraper
+Scrapes the top 200 most-played games on Board Game Arena with full metadata (designer, publisher, complexity, strategy, luck, interaction, player count, duration, tags, box art).
 
 ```bash
-python llm_orchestrator.py --retry --limit=10
+python bga_scraper.py              # scrape top 200
+python bga_scraper.py --limit=50   # scrape top 50
+python bga_scraper.py --retry      # retry failed
+python bga_scraper.py --export-only
 ```
 
-This re-attempts videos with status `FAILED_TRANSCRIPT` or `FAILED_LLM`.
-
-### 3. Check status without processing
+### 3. Static Site Generator
+Reads all `channel_insights_*.jsonl` files and generates `docs/index.html` with a sortable, filterable Tabulator table.
 
 ```bash
-sqlite3 orchestrator_state.db "SELECT status, COUNT(*) FROM videos GROUP BY status"
+python generate_site.py
 ```
 
-### 4. Review output
+### 4. Full Publish Pipeline
+Runs all orchestrators, regenerates the site, and pushes to GitHub Pages.
 
 ```bash
-# Count records
-wc -l Complete_Insights.jsonl
-
-# Pretty-print a single record
-head -1 Complete_Insights.jsonl | python -m json.tool
-
-# List all video titles in output
-python -c "import json; [print(json.loads(l).get('_vid_title','')) for l in open('Complete_Insights.jsonl')]"
-```
-
-### 5. Skip a new off-topic video
-
-If you spot an off-topic video in the output, add its video ID to `SKIP_VIDEO_IDS` in `config.py`, then update its status in the DB:
-
-```bash
-sqlite3 orchestrator_state.db "UPDATE videos SET status = 'SKIPPED_BY_FILTER' WHERE video_id = 'VIDEO_ID_HERE'"
-```
-
-Then re-export:
-```bash
-python llm_orchestrator.py --limit=0
+./publish.sh
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `llm_orchestrator.py` | Main pipeline — scrape, extract, export |
-| `config.py` | Shared constants, skip lists, channel URLs |
-| `orchestrator_state.db` | SQLite state tracking (video status) |
-| `Complete_Insights.jsonl` | Extracted data output (one JSON per line) |
-| `extract_all.py` | Fuzzy-match against existing spreadsheet |
-| `validate_data.py` | Cross-reference spreadsheet vs channel videos |
+| `llm_orchestrator.py` | YouTube channel scanner — scrape, extract, export |
+| `bga_scraper.py` | BGA game metadata scraper + BGG enrichment |
+| `generate_site.py` | Static site generator (reads all channel_insights_*.jsonl) |
+| `publish.sh` | End-to-end automation: scrape → extract → generate → push |
+| `config.py` | YAML config loader for channel scanner |
+| `scanner_config.yaml` | Config for 3 default channels |
+| `boardgameco_config.yaml` | Config for BoardGameCo channel |
+| `bga_config.yaml` | Config for BGA scraper |
 
-## CLI Reference
+## Data Files
 
-```
-python llm_orchestrator.py [OPTIONS]
+| File | Contents |
+|------|----------|
+| `channel_insights_multi.jsonl` | Extracted data from 3 default channels |
+| `channel_insights_boardgameco.jsonl` | Extracted data from BoardGameCo |
+| `bga_games.jsonl` | BGA top 200 game metadata + BGG ratings |
+| `BGA_Top_200_Games.xlsx` | Excel export of BGA/BGG data (44 columns) |
+| `BGA_Popular_100_Games.csv` | BGA popular-now snapshot (2026-03-26) |
 
-Options:
-  --limit=N    Process at most N pending videos (default: all)
-  N            Same as --limit=N (positional shorthand)
-  --retry      Also retry FAILED_TRANSCRIPT and FAILED_LLM videos
-```
+## Databases
+
+| Database | Contents |
+|----------|----------|
+| `orchestrator_state.db` | State tracking for 3 default channels |
+| `boardgameco_state.db` | State tracking for BoardGameCo |
+| `bga_games.db` | BGA game metadata, BGG ratings, popular-now snapshots |
+
+## Environment
+
+- Python >=3.11
+- `ANTHROPIC_API_KEY` required for YouTube pipeline
+- Virtual environment in `.venv/`
+- Site published via GitHub Pages at https://games.transformativehelp.com/
