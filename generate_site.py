@@ -1,44 +1,50 @@
 #!/usr/bin/env python3
-"""Generate a static HTML site from Complete_Insights.jsonl using Tabulator."""
+"""Generate a static HTML site from channel_insights_*.jsonl using Tabulator."""
 
+import glob
 import json
 import os
 from datetime import datetime, timezone
 
-JSONL_PATH = "Complete_Insights.jsonl"
+JSONL_PATTERN = "channel_insights_*.jsonl"
 OUTPUT_DIR = "docs"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "index.html")
 
 
-def load_data(path):
-    """Read JSONL and return a flat list of game dicts with video metadata."""
+def load_data(pattern):
+    """Read all matching JSONL files and return a flat list of game dicts."""
     games = []
     video_titles = set()
     channels = set()
 
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
-            vid_title = record.get("_vid_title", "")
-            channel = record.get("channel", "")
-            video_titles.add(vid_title)
-            channels.add(channel)
+    files = sorted(glob.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No files matching {pattern}")
 
-            for game in record.get("games", []):
-                games.append({
-                    "title": game.get("title", ""),
-                    "score": game.get("score"),
-                    "ranking": game.get("ranking"),
-                    "ranking_source": game.get("ranking_source"),
-                    "opinion": game.get("opinion", "") or "",
-                    "channel": channel,
-                    "video_link": record.get("video_link", ""),
-                    "video_title": vid_title,
-                    "classification": record.get("classification", ""),
-                })
+    for path in files:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                vid_title = record.get("_vid_title", "")
+                channel = record.get("channel", "")
+                video_titles.add(vid_title)
+                channels.add(channel)
+
+                for game in record.get("games", []):
+                    games.append({
+                        "title": game.get("title", ""),
+                        "score": game.get("score"),
+                        "ranking": game.get("ranking"),
+                        "ranking_source": game.get("ranking_source"),
+                        "opinion": game.get("opinion", "") or "",
+                        "channel": channel,
+                        "video_link": record.get("video_link", ""),
+                        "video_title": vid_title,
+                        "classification": record.get("classification", ""),
+                    })
 
     return games, len(video_titles), sorted(channels)
 
@@ -270,7 +276,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    games, video_count, channels = load_data(JSONL_PATH)
+    games, video_count, channels = load_data(JSONL_PATTERN)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     unique_titles = len({g["title"].lower() for g in games})
 

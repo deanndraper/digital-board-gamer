@@ -43,7 +43,7 @@ orchestrator:
   db_name: 'boardgameco_state.db'
   videos_per_channel: 50
   log_file: 'boardgameco_orchestrator.log'
-  output_jsonl: 'BoardGameCo_Insights.jsonl'
+  output_jsonl: 'channel_insights_boardgameco.jsonl'
 
   # Video IDs to unconditionally skip (known off-topic content)
   skip_video_ids: []

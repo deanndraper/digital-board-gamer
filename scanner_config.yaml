@@ -50,7 +50,7 @@ orchestrator:
   db_name: 'orchestrator_state.db'
   videos_per_channel: 50
   log_file: 'orchestrator.log'
-  output_jsonl: 'Complete_Insights.jsonl'
+  output_jsonl: 'channel_insights_multi.jsonl'
 
   # Video IDs to unconditionally skip (known off-topic content)
   skip_video_ids:
