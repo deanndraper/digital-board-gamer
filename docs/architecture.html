@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project Architecture — Digital Board Gamer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+            margin: 0;
+            padding: 2rem;
+        }
+        h1 { text-align: center; font-size: 1.8rem; margin-bottom: 0.3rem; }
+        p.subtitle { text-align: center; color: #64748b; margin-bottom: 2rem; }
+        .diagram-section { margin-bottom: 3rem; }
+        .diagram-section h2 {
+            font-size: 1.2rem;
+            color: #475569;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.4rem;
+            margin-bottom: 1rem;
+        }
+        .mermaid { text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Digital Board Gamer — Architecture</h1>
+    <p class="subtitle">How data flows through the project</p>
+
+    <div class="diagram-section">
+        <h2>Full System Overview</h2>
+        <pre class="mermaid">
+flowchart TB
+    subgraph SOURCES["External Sources"]
+        YT["YouTube Channels\n4 channels"]
+        BGA_SITE["boardgamearena.com\n1,249 games"]
+        BGG_SITE["boardgamegeek.com\nRatings & rankings"]
+    end
+
+    subgraph CONFIG["YAML Configuration"]
+        SC["scanner_config.yaml\n3 channels: Digital Board Gamer,\nGame-Night with Saisha,\nPeaky Boardgamer"]
+        BC["boardgameco_config.yaml\n1 channel: BoardGameCo"]
+        BGAC["bga_config.yaml\nBGA scraper settings"]
+    end
+
+    subgraph PIPELINE["Python Pipeline"]
+        CFG["config.py\nYAML loader → constants"]
+        LLM["llm_orchestrator.py\nScrape → Prefilter → Extract → Export"]
+        BGAS["bga_scraper.py\nGame list → Detail pages → BGG enrichment"]
+        GEN["generate_site.py\nJSONL → HTML with Tabulator"]
+    end
+
+    subgraph STORAGE["Data Storage"]
+        DB1["orchestrator_state.db\nDefault 3-channel state"]
+        DB2["boardgameco_state.db\nBoardGameCo state"]
+        DB3["bga_games.db\n200 games + BGG data\n+ popular_now snapshots"]
+        J1["channel_insights_multi.jsonl\n3-channel extractions"]
+        J2["channel_insights_boardgameco.jsonl\nBoardGameCo extractions"]
+        J3["bga_games.jsonl\nBGA game metadata"]
+        XL["BGA_Top_200_Games.xlsx\nExcel export"]
+    end
+
+    subgraph OUTPUT["Published Output"]
+        HTML["docs/index.html\nTabulator table"]
+        GHP["GitHub Pages\ngames.transformativehelp.com"]
+    end
+
+    SC --> CFG
+    BC --> CFG
+    BGAC --> BGAS
+    CFG --> LLM
+    YT --> LLM
+    BGA_SITE --> BGAS
+    BGG_SITE --> BGAS
+
+    LLM --> DB1
+    LLM --> DB2
+    LLM --> J1
+    LLM --> J2
+    BGAS --> DB3
+    BGAS --> J3
+    BGAS --> XL
+
+    J1 --> GEN
+    J2 --> GEN
+    GEN --> HTML
+    HTML --> GHP
+
+    style SOURCES fill:#dbeafe,stroke:#3b82f6
+    style CONFIG fill:#fef3c7,stroke:#f59e0b
+    style PIPELINE fill:#dcfce7,stroke:#22c55e
+    style STORAGE fill:#f1f5f9,stroke:#94a3b8
+    style OUTPUT fill:#ede9fe,stroke:#8b5cf6
+        </pre>
+    </div>
+
+    <div class="diagram-section">
+        <h2>YouTube Channel Scanner Pipeline</h2>
+        <pre class="mermaid">
+flowchart LR
+    subgraph INPUT["Input"]
+        CH["YouTube Channel URLs\nfrom YAML config"]
+    end
+
+    subgraph SCRAPE["Phase 1: Scrape"]
+        ST["scrapetube\nEnumerate videos"]
+        DB_INS["Insert new videos\nstatus = PENDING"]
+    end
+
+    subgraph FILTER["Phase 2: Filter"]
+        KW["Keyword skip\nchannel update, vlog, etc."]
+        PRE["Claude Haiku\nPrefilter YES/NO"]
+    end
+
+    subgraph EXTRACT["Phase 3: Extract"]
+        TR["youtube-transcript-api\nFetch transcript"]
+        TRIM["Trim transcript\nFirst 1K + last 11K words"]
+        CLAUDE["Claude Sonnet\nStructured JSON extraction"]
+    end
+
+    subgraph EXPORT["Phase 4: Export"]
+        JSONL["channel_insights_*.jsonl\nAll COMPLETED records"]
+        STATUS["Print status summary"]
+    end
+
+    CH --> ST --> DB_INS
+    DB_INS --> KW
+    KW -->|"SKIPPED"| DB_INS
+    KW -->|"passed"| PRE
+    PRE -->|"REJECTED"| DB_INS
+    PRE -->|"YES"| TR
+    TR --> TRIM --> CLAUDE
+    CLAUDE -->|"COMPLETED"| JSONL
+    CLAUDE -->|"FAILED_LLM"| DB_INS
+    TR -->|"FAILED_TRANSCRIPT"| DB_INS
+    JSONL --> STATUS
+
+    style INPUT fill:#dbeafe,stroke:#3b82f6
+    style SCRAPE fill:#fef3c7,stroke:#f59e0b
+    style FILTER fill:#fee2e2,stroke:#ef4444
+    style EXTRACT fill:#dcfce7,stroke:#22c55e
+    style EXPORT fill:#ede9fe,stroke:#8b5cf6
+        </pre>
+    </div>
+
+    <div class="diagram-section">
+        <h2>BGA Scraper Pipeline</h2>
+        <pre class="mermaid">
+flowchart LR
+    subgraph LIST["Phase 1: Game List"]
+        GL["GET boardgamearena.com/gamelist"]
+        PARSE["Parse game_list JSON\n+ game_tags mapping"]
+        SORT["Sort by games_played DESC\nTake top 200"]
+        INS["Insert into bga_games\nwith tags, metrics"]
+    end
+
+    subgraph DETAIL["Phase 2: Detail Pages"]
+        GP["GET gamepanel?game=ID\nfor each PENDING game"]
+        ROW["Parse row-data divs\ndesigner, publisher, year,\ncomplexity, strategy, luck,\ninteraction, duration, players"]
+        IMG["Extract box image URL"]
+    end
+
+    subgraph BGG["Phase 3: BGG Enrichment"]
+        BGGF["GET boardgamegeek.com/boardgame/ID"]
+        BGGP["Parse geekitemPreload JSON\nrating, weight, rank,\nnum_ratings, num_owned"]
+    end
+
+    subgraph OUT["Output"]
+        DB["bga_games.db\n200 games, 44+ fields"]
+        JL["bga_games.jsonl"]
+        XLSX["BGA_Top_200_Games.xlsx"]
+    end
+
+    GL --> PARSE --> SORT --> INS
+    INS --> GP --> ROW --> IMG
+    IMG --> BGGF --> BGGP
+    BGGP --> DB
+    DB --> JL
+    DB --> XLSX
+
+    style LIST fill:#dbeafe,stroke:#3b82f6
+    style DETAIL fill:#fef3c7,stroke:#f59e0b
+    style BGG fill:#dcfce7,stroke:#22c55e
+    style OUT fill:#ede9fe,stroke:#8b5cf6
+        </pre>
+    </div>
+
+    <div class="diagram-section">
+        <h2>Publish Pipeline (publish.sh)</h2>
+        <pre class="mermaid">
+flowchart LR
+    PULL["git pull"] --> ENV["source .env\nsource .venv/bin/activate"]
+    ENV --> RUN1["python llm_orchestrator.py\n+ --retry\n(default 3 channels)"]
+    RUN1 --> RUN2["SCANNER_CONFIG=boardgameco\npython llm_orchestrator.py\n+ --retry"]
+    RUN2 --> GEN["python generate_site.py\nReads all channel_insights_*.jsonl"]
+    GEN --> DIFF{"Changes\ndetected?"}
+    DIFF -->|"No"| DONE["Done"]
+    DIFF -->|"Yes"| COMMIT["git add + commit + push"]
+    COMMIT --> PAGES["GitHub Pages\nauto-deploys"]
+
+    style PULL fill:#f1f5f9,stroke:#94a3b8
+    style GEN fill:#dcfce7,stroke:#22c55e
+    style COMMIT fill:#ede9fe,stroke:#8b5cf6
+    style PAGES fill:#dbeafe,stroke:#3b82f6
+        </pre>
+    </div>
+
+    <div class="diagram-section">
+        <h2>File Map</h2>
+        <pre class="mermaid">
+flowchart TB
+    subgraph PY["Python Scripts"]
+        direction TB
+        P1["config.py\nLoads YAML → exports constants"]
+        P2["llm_orchestrator.py\nMain pipeline: scrape → extract → export"]
+        P3["bga_scraper.py\nBGA + BGG data scraper"]
+        P4["generate_site.py\nJSONL → docs/index.html"]
+        P5["extract_all.py\nFuzzy-match against spreadsheet"]
+        P6["validate_data.py\nCross-reference spreadsheet vs channels"]
+        P7["test_claude.py\nSmoke test: single video extraction"]
+    end
+
+    subgraph YAML["YAML Configs"]
+        direction TB
+        Y1["scanner_config.yaml\nChannels, prompts, skip lists,\nmodel settings (3 channels)"]
+        Y2["boardgameco_config.yaml\nSame structure,\nBoardGameCo channel only"]
+        Y3["bga_config.yaml\nBGA URLs, rate limit,\nDB name, top N games"]
+    end
+
+    subgraph DATA["Data Files"]
+        direction TB
+        D1["channel_insights_multi.jsonl\nExtracted game data (3 ch)"]
+        D2["channel_insights_boardgameco.jsonl\nExtracted game data (BGCo)"]
+        D3["bga_games.jsonl\n200 BGA games + BGG"]
+        D4["BGA_Top_200_Games.xlsx\nExcel export"]
+        D5["BGA_Popular_100_Games.csv\nPopular-now snapshot"]
+    end
+
+    subgraph DBS["SQLite Databases"]
+        direction TB
+        S1["orchestrator_state.db\nVideo status tracking (3 ch)"]
+        S2["boardgameco_state.db\nVideo status tracking (BGCo)"]
+        S3["bga_games.db\nbga_games table (200 rows)\nbga_popular_now table"]
+    end
+
+    subgraph SITE["Published Site"]
+        direction TB
+        W1["docs/index.html\nTabulator table, all channels"]
+        W2["publish.sh\nEnd-to-end automation"]
+        W3["games.transformativehelp.com\nGitHub Pages"]
+    end
+
+    Y1 --> P1
+    Y2 --> P1
+    P1 --> P2
+    Y3 --> P3
+    P2 --> S1
+    P2 --> S2
+    P2 --> D1
+    P2 --> D2
+    P3 --> S3
+    P3 --> D3
+    P3 --> D4
+    D1 --> P4
+    D2 --> P4
+    P4 --> W1
+    W2 --> W3
+
+    style PY fill:#dcfce7,stroke:#22c55e
+    style YAML fill:#fef3c7,stroke:#f59e0b
+    style DATA fill:#f1f5f9,stroke:#94a3b8
+    style DBS fill:#fee2e2,stroke:#ef4444
+    style SITE fill:#ede9fe,stroke:#8b5cf6
+        </pre>
+    </div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#dbeafe',
+                primaryTextColor: '#1e293b',
+                primaryBorderColor: '#3b82f6',
+                lineColor: '#64748b',
+                fontSize: '14px'
+            }
+        });
+    </script>
+</body>
+</html>

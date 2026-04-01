@@ -25,14 +25,21 @@ except FileNotFoundError:
 CHANNELS = _cfg['channels']
 
 # -- LLM --------------------------------------------------------------------
-LLM_MODEL = _cfg['llm']['model']
+LLM_BACKEND = _cfg['llm'].get('backend', 'cli')
+LLM_MODEL = _cfg['llm'].get('model', 'claude-sonnet-4-6')   # kept for reference/logging
 RATE_LIMIT_SECONDS = _cfg['llm']['rate_limit_seconds']
 MAX_TRANSCRIPT_WORDS = _cfg['llm'].get('max_transcript_words', 12000)
 
+# CLI backend settings
+CLI_COMMAND = _cfg['llm'].get('cli_command', 'claude')
+CLI_FLAGS = _cfg['llm'].get('cli_flags', '')
+EXTRACTION_INSTRUCTIONS_FILE = _cfg['llm'].get(
+    'extraction_instructions', 'extraction_instructions.md')
+PREFILTER_INSTRUCTIONS_FILE = _cfg['llm'].get(
+    'prefilter_instructions', 'prefilter_instructions.md')
+
 _prefilter = _cfg['llm'].get('prefilter', {})
 PREFILTER_ENABLED = _prefilter.get('enabled', False)
-PREFILTER_MODEL = _prefilter.get('model', 'claude-haiku-4-5-20251001')
-PREFILTER_PROMPT = _prefilter.get('prompt', '')
 
 # -- Orchestrator ------------------------------------------------------------
 _orch = _cfg['orchestrator']
@@ -42,7 +49,6 @@ LOG_FILE = _orch['log_file']
 OUTPUT_JSONL = _orch['output_jsonl']
 SKIP_VIDEO_IDS = set(_orch.get('skip_video_ids', []))
 SKIP_TITLE_KEYWORDS = _orch.get('skip_title_keywords', [])
-EXTRACTION_PROMPT = _orch['extraction_prompt']
 
 # -- Extraction (extract_all.py) ---------------------------------------------
 _ext = _cfg['extraction']

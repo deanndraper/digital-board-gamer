@@ -1,20 +1,23 @@
 import sqlite3
 import json
 import os
-import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import logging
 from datetime import datetime
+from pathlib import Path
 
-import anthropic
 import scrapetube
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from config import (
-    CHANNELS, DB_NAME, LLM_MODEL, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
-    SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS, EXTRACTION_PROMPT, OUTPUT_JSONL, LOG_FILE,
-    PREFILTER_ENABLED, PREFILTER_MODEL, PREFILTER_PROMPT, MAX_TRANSCRIPT_WORDS,
+    CHANNELS, DB_NAME, VIDEOS_PER_CHANNEL, RATE_LIMIT_SECONDS,
+    SKIP_VIDEO_IDS, SKIP_TITLE_KEYWORDS, OUTPUT_JSONL, LOG_FILE,
+    PREFILTER_ENABLED, LLM_BACKEND, CLI_COMMAND, CLI_FLAGS,
+    EXTRACTION_INSTRUCTIONS_FILE, PREFILTER_INSTRUCTIONS_FILE,
 )
 
 logging.basicConfig(
@@ -26,6 +29,11 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Project root — used to locate instruction files
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 def setup_db():
@@ -52,22 +60,6 @@ def setup_db():
     return conn
 
 
-def trim_transcript(text, max_words):
-    """Trim long transcripts, keeping the first 1000 and last (max-1000) words.
-
-    Rationale: reviewers state game names at the start and scores/verdicts at
-    the end, so we preserve both bookends.
-    """
-    words = text.split()
-    if len(words) <= max_words:
-        return text
-    head_size = 1000
-    tail_size = max_words - head_size
-    head = ' '.join(words[:head_size])
-    tail = ' '.join(words[-tail_size:])
-    return head + '\n\n[... transcript truncated ...]\n\n' + tail
-
-
 def fetch_transcript(video_id):
     """Fetch the transcript for a YouTube video using youtube-transcript-api."""
     api = YouTubeTranscriptApi()
@@ -76,31 +68,139 @@ def fetch_transcript(video_id):
     return text
 
 
-def _call_with_retry(fn, max_retries=5):
-    """Call fn(), retrying on rate-limit errors with exponential backoff."""
-    for attempt in range(max_retries):
-        try:
-            return fn()
-        except anthropic.RateLimitError as e:
-            if attempt < max_retries - 1:
-                wait = min(2 ** attempt * 10, 120)
-                log.warning("Rate limited. Waiting %ds before retry %d/%d...",
-                            wait, attempt + 1, max_retries)
-                time.sleep(wait)
-            else:
-                raise
-        except anthropic.APIStatusError as e:
-            if e.status_code == 529:  # overloaded
-                if attempt < max_retries - 1:
-                    wait = min(2 ** attempt * 10, 120)
-                    log.warning("API overloaded (529). Waiting %ds before retry %d/%d...",
-                                wait, attempt + 1, max_retries)
-                    time.sleep(wait)
-                else:
-                    raise
-            else:
-                raise
+# ---------------------------------------------------------------------------
+# CLI workspace management
+# ---------------------------------------------------------------------------
 
+def _setup_cli_workspace(instruction_file):
+    """Create an isolated temp workspace for the CLI invocation.
+
+    The workspace contains:
+      - CLAUDE.md: minimal directive to follow the instruction file
+      - The instruction file (copied from project root)
+
+    Returns the workspace directory path (caller should clean up).
+    """
+    workspace = tempfile.mkdtemp(prefix='cli_workspace_')
+
+    # Minimal CLAUDE.md so the CLI doesn't load project context
+    claude_md = Path(workspace) / 'CLAUDE.md'
+    claude_md.write_text(
+        "Follow the instruction file exactly. Return only JSON. "
+        "Do not add commentary, markdown fences, or extra text.\n"
+    )
+
+    # Copy the instruction file into the workspace
+    src = PROJECT_ROOT / instruction_file
+    if not src.exists():
+        raise FileNotFoundError(f"Instruction file not found: {src}")
+    shutil.copy2(src, workspace)
+
+    return workspace
+
+
+def _run_cli(input_text, instruction_file):
+    """Run the Claude CLI with the given input and instruction file.
+
+    Sets up an isolated workspace, pipes input_text to the CLI, and
+    returns the parsed JSON output.
+    """
+    workspace = _setup_cli_workspace(instruction_file)
+    try:
+        # Write the input text to a temp file in the workspace
+        input_path = Path(workspace) / 'input.txt'
+        input_path.write_text(input_text)
+
+        # Build the CLI command
+        cmd = [CLI_COMMAND, '-p']
+        if CLI_FLAGS:
+            cmd.extend(CLI_FLAGS.split())
+        cmd.extend([
+            '--append-system-prompt-file', instruction_file,
+            '--output-format', 'json',
+        ])
+
+        log.debug("CLI command: %s", ' '.join(cmd))
+        log.debug("CLI workspace: %s", workspace)
+
+        result = subprocess.run(
+            cmd,
+            input=input_text,
+            capture_output=True,
+            text=True,
+            cwd=workspace,
+            timeout=300,  # 5-minute timeout per invocation
+        )
+
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            raise RuntimeError(
+                f"CLI exited with code {result.returncode}: {stderr}"
+            )
+
+        raw_output = result.stdout.strip()
+        if not raw_output:
+            raise RuntimeError("CLI returned empty output")
+
+        # The CLI with --output-format json wraps the result in a JSON
+        # envelope with a "result" field. Try to unwrap it.
+        try:
+            envelope = json.loads(raw_output)
+            if isinstance(envelope, dict) and 'result' in envelope:
+                inner = envelope['result']
+                # The inner result might be a JSON string or already parsed
+                if isinstance(inner, str):
+                    # Strip markdown fences if present (safety net)
+                    inner = inner.strip()
+                    if inner.startswith("```"):
+                        inner = inner.split("\n", 1)[1] if "\n" in inner else inner[3:]
+                        if inner.endswith("```"):
+                            inner = inner[:-3].strip()
+                    return json.loads(inner)
+                return inner
+            # If no envelope, the output is the raw JSON
+            return envelope
+        except json.JSONDecodeError:
+            # Try stripping markdown fences as a last resort
+            cleaned = raw_output
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3].strip()
+            return json.loads(cleaned)
+
+    finally:
+        # Clean up the temp workspace
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Extraction and prefiltering
+# ---------------------------------------------------------------------------
+
+def extract_with_cli(title, transcript_text):
+    """Send the transcript + title to Claude CLI for structured extraction."""
+    input_text = f"Video title: {title}\n\nTranscript:\n{transcript_text}"
+    return _run_cli(input_text, EXTRACTION_INSTRUCTIONS_FILE)
+
+
+def prefilter_with_cli(title, description):
+    """Use the CLI to decide if a video is worth extracting."""
+    input_text = f"Title: {title}\nDescription: {description or '(no description available)'}"
+    result = _run_cli(input_text, PREFILTER_INSTRUCTIONS_FILE)
+
+    # The result should be a dict with a "result" text or just a string
+    if isinstance(result, dict):
+        answer = result.get('result', str(result))
+    else:
+        answer = str(result)
+
+    return answer.strip()
+
+
+# ---------------------------------------------------------------------------
+# Pipeline stages
+# ---------------------------------------------------------------------------
 
 def fetch_candidates(conn, limit=None):
     log.info("Fetching video candidates from channels...")
@@ -150,44 +250,12 @@ def fetch_candidates(conn, limit=None):
             log.exception("Error fetching %s", channel)
 
 
-def extract_with_claude(client, title, transcript_text):
-    """Send the transcript + title to Claude for structured extraction."""
-    prompt = (
-        f"Video title: {title}\n\n"
-        f"Transcript:\n{transcript_text}\n\n"
-        f"{EXTRACTION_PROMPT}\n"
-        "Return ONLY the JSON object, no markdown fences or extra text."
-    )
-
-    def _call():
-        response = client.messages.create(
-            model=LLM_MODEL,
-            max_tokens=16384,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = response.content[0].text.strip()
-        # Strip markdown fences if present
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3].strip()
-        return text
-
-    return _call_with_retry(_call)
-
-
 def prefilter_pending(conn, limit=None):
-    """Use a cheap text-only LLM call to reject non-candidate videos."""
+    """Use the CLI to reject non-candidate videos."""
     if not PREFILTER_ENABLED:
         log.info("Pre-filter disabled, skipping.")
         return
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        log.error("Set ANTHROPIC_API_KEY to run pre-filter.")
-        return
-
-    client = anthropic.Anthropic(api_key=api_key)
     c = conn.cursor()
 
     query = "SELECT video_id, title, description_snippet FROM videos WHERE status = 'PENDING'"
@@ -200,21 +268,10 @@ def prefilter_pending(conn, limit=None):
         log.info("No PENDING videos to pre-filter.")
         return
 
-    log.info("Pre-filtering %d PENDING videos...", len(rows))
+    log.info("Pre-filtering %d PENDING videos via CLI...", len(rows))
     for idx, (vid_id, title, desc) in enumerate(rows):
-        prompt = PREFILTER_PROMPT.format(
-            title=title,
-            description=desc or '(no description available)',
-        )
         try:
-            def _call(p=prompt):
-                return client.messages.create(
-                    model=PREFILTER_MODEL,
-                    max_tokens=256,
-                    messages=[{"role": "user", "content": p}],
-                )
-            response = _call_with_retry(_call)
-            answer = response.content[0].text.strip()
+            answer = prefilter_with_cli(title, desc)
             if answer.upper().startswith('NO'):
                 log.info("[%d/%d] REJECTED: %s — %s", idx + 1, len(rows), title, answer)
                 c.execute(
@@ -229,16 +286,10 @@ def prefilter_pending(conn, limit=None):
         except Exception as e:
             log.warning("Pre-filter failed for %s, leaving as PENDING: %s", title, e)
 
-        time.sleep(1)
+        time.sleep(RATE_LIMIT_SECONDS)
 
 
 def process_pending(conn, retry_failed=False, limit=None):
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        log.error("Set ANTHROPIC_API_KEY environment variable to run LLM extraction.")
-        return
-
-    client = anthropic.Anthropic(api_key=api_key)
     c = conn.cursor()
 
     statuses = ['PENDING']
@@ -260,7 +311,6 @@ def process_pending(conn, retry_failed=False, limit=None):
         # Step 1: Fetch transcript
         try:
             transcript_text = fetch_transcript(vid_id)
-            transcript_text = trim_transcript(transcript_text, MAX_TRANSCRIPT_WORDS)
         except Exception as e:
             log.warning(" -> Transcript fetch failed for %s: %s", title, e)
             c.execute(
@@ -270,10 +320,9 @@ def process_pending(conn, retry_failed=False, limit=None):
             conn.commit()
             continue
 
-        # Step 2: Send transcript to Claude for extraction
+        # Step 2: Send transcript to CLI for extraction
         try:
-            llm_result_str = extract_with_claude(client, title, transcript_text)
-            llm_data = json.loads(llm_result_str)
+            llm_data = extract_with_cli(title, transcript_text)
 
             # Inject our known metadata
             llm_data['video_link'] = url
@@ -335,6 +384,7 @@ def main():
         elif arg.isdigit():
             limit = int(arg)
 
+    log.info("LLM backend: %s (command: %s)", LLM_BACKEND, CLI_COMMAND)
     conn = setup_db()
     fetch_candidates(conn, limit=limit)
     prefilter_pending(conn, limit=limit)

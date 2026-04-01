@@ -27,21 +27,16 @@ channels:
 # LLM settings
 # ---------------------------------------------------------------------------
 llm:
-  model: 'claude-sonnet-4-6'
+  backend: 'cli'                                    # 'cli' — uses Claude Code CLI
+  model: 'claude-sonnet-4-6'                        # kept for reference/logging
+  cli_command: 'claude'                             # which CLI to invoke
+  cli_flags: ''                                     # additional flags (--bare fails auth)
+  extraction_instructions: 'extraction_instructions.md'
+  prefilter_instructions: 'prefilter_instructions.md'
   rate_limit_seconds: 10
   max_transcript_words: 12000
   prefilter:
     enabled: true
-    model: 'claude-haiku-4-5-20251001'
-    prompt: |
-      Given this YouTube video title and description, is this video a board game
-      review, ranking, top-10 or top-X list where X is the number of games ranked.
-      Answer YES if the title contains words like "review", "ranking", or "top 10".
-      Only answer NO if it is clearly a playthrough, preview, or unrelated content.
-      Answer only YES or NO followed by a brief reason.
-
-      Title: {title}
-      Description: {description}
 
 # ---------------------------------------------------------------------------
 # Orchestrator settings
