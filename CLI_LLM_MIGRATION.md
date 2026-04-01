@@ -56,35 +56,51 @@ Python fetches transcript
 - Long transcript handling (chunking, merging — handled by CLI context)
 - Prompt engineering (YAML blocks → .md instruction files)
 
-## New Files
+## CLI Workspace
 
-### .claude/skills/prefilter/SKILL.md
-Prefilter instruction — given a title and description, respond YES or NO with reason.
+The CLI runs in an isolated directory so it doesn't load the project's CLAUDE.md, code, git history, or skills — avoiding wasted tokens and confused context.
 
-### .claude/skills/extract-games/SKILL.md
-Extraction instruction — given a transcript, extract games with scores, rankings, opinions. Includes the full JSON schema and extraction rules currently in the YAML configs.
+**Location:** `/tmp/cli_workspace/`
 
-### extraction_instructions.md (alternative to skills)
-Standalone instruction file loadable via `--append-system-prompt-file`. May be simpler than skills for batch processing with `--bare` mode.
+**Contents:**
+```
+/tmp/cli_workspace/
+├── CLAUDE.md                     # Minimal: "Follow the instruction file exactly. Return only JSON."
+├── extraction_instructions.md    # Game extraction rules + JSON schema
+├── prefilter_instructions.md     # YES/NO prefilter rules
+└── transcript.txt                # Temp — written per video, overwritten each time
+```
+
+**Setup:** Python creates this directory and copies instruction files at pipeline startup. The transcript file is overwritten for each video. The directory is outside the project tree entirely — explicit, visible, no gitignore needed.
+
+## New Files (in project root, copied to workspace at runtime)
+
+### extraction_instructions.md
+Full extraction rules, JSON schema, field definitions. Already created during POC.
+
+### prefilter_instructions.md
+Given a title and description, respond YES or NO with reason.
 
 ## CLI Invocation Patterns
 
+All invocations use `cwd=/tmp/cli_workspace/` so the CLI only sees the workspace files.
+
 ### Prefilter
 ```bash
+cd /tmp/cli_workspace && \
 echo "Title: ${title}\nDescription: ${description}" | \
-  claude --bare -p \
+  claude -p \
     --append-system-prompt-file prefilter_instructions.md \
-    --output-format json \
-    --json-schema '{"type":"object","properties":{"answer":{"type":"string","enum":["YES","NO"]},"reason":{"type":"string"}},"required":["answer","reason"]}'
+    --output-format json
 ```
 
 ### Extraction
 ```bash
+cd /tmp/cli_workspace && \
 cat transcript.txt | \
-  claude --bare -p \
+  claude -p \
     --append-system-prompt-file extraction_instructions.md \
-    --output-format json \
-    --json-schema '{"type":"object","properties":{"games":{"type":"array"},"summary":{"type":"string"},"classification":{"type":"string"}},"required":["games","summary","classification"]}'
+    --output-format json
 ```
 
 ## Config Changes
@@ -136,8 +152,28 @@ Existing API fields (`model`, `rate_limit_seconds`, etc.) remain for backward co
 - Phase 4: Switch default to CLI, keep API as fallback
 - Phase 5: Remove API-specific code (chunking, retry, fence-stripping) once CLI is proven stable
 
+## POC Results (2026-04-01)
+
+Tested with "The Hottest and Not-So-Hot Games of 2025 on BGA" video (92 games shown, 1,732 word transcript).
+
+| Metric | API (Sonnet) | CLI (Opus via Pro) |
+|--------|-------------|-------------------|
+| Games extracted | 31 | 31 |
+| Time | ~38s | ~38s |
+| Cost | ~$0.02 | $0.155 (Opus pricing) / $0 against Pro plan |
+| Chunking needed | No | No |
+
+**Findings:**
+- CLI extracted same data as API — functionally equivalent
+- CLI used Opus (project default) — higher quality model at no API cost via Pro plan
+- 92 vs 31 gap is a transcript limitation (games shown on screen, not spoken) — neither API nor CLI can fix this
+- `--bare` flag fails auth — must run without it, hence the isolated workspace is important
+- Output is JSON envelope with `result` field containing the extraction (sometimes with markdown fences)
+- Need to test `--json-schema` flag to eliminate fences
+
 ## Open Questions
 - Does `--json-schema` work reliably with large outputs (90+ game objects)?
 - What happens when the 5-hour token window is exhausted mid-batch?
-- Should we use skills or standalone instruction files for batch mode?
 - What's the per-invocation overhead of CLI vs API (startup time)?
+- Can we specify model via CLI flag to control cost/quality tradeoff?
+- The workspace CLAUDE.md — how minimal can it be while still directing the CLI correctly?
