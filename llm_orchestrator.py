@@ -7,8 +7,9 @@ import sys
 import tempfile
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+import re
 
 import scrapetube
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -34,6 +35,26 @@ log = logging.getLogger(__name__)
 # Project root — used to locate instruction files
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def parse_relative_date(text):
+    """Convert YouTube relative date like '3 weeks ago' to ISO date string (YYYY-MM-DD)."""
+    if not text:
+        return None
+    m = re.match(r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago', text.strip())
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2)
+    delta_map = {
+        'second': timedelta(seconds=n),
+        'minute': timedelta(minutes=n),
+        'hour': timedelta(hours=n),
+        'day': timedelta(days=n),
+        'week': timedelta(weeks=n),
+        'month': timedelta(days=n * 30),
+        'year': timedelta(days=n * 365),
+    }
+    return (datetime.now() - delta_map[unit]).strftime('%Y-%m-%d')
 
 
 def setup_db():
@@ -228,7 +249,9 @@ def fetch_candidates(conn, limit=None):
                 vid_url = f"https://www.youtube.com/watch?v={vid_id}"
 
                 # Extract published date and description snippet from scrapetube metadata
-                published_text = video.get('publishedTimeText', {}).get('simpleText', '')
+                published_text = parse_relative_date(
+                    video.get('publishedTimeText', {}).get('simpleText', '')
+                )
                 desc_runs = video.get('descriptionSnippet', {}).get('runs', [])
                 description_snippet = ' '.join(r.get('text', '') for r in desc_runs).strip() or None
 
@@ -290,7 +313,9 @@ def prefilter_pending(conn, limit=None):
 
 
 def process_pending(conn, retry_failed=False, limit=None):
+    """Process pending videos and return list of newly extracted results."""
     c = conn.cursor()
+    new_extractions = []
 
     statuses = ['PENDING']
     if retry_failed:
@@ -335,6 +360,11 @@ def process_pending(conn, retry_failed=False, limit=None):
             )
             conn.commit()
             log.info(" -> Extraction successful!")
+            new_extractions.append({
+                "title": title,
+                "channel": channel,
+                "games": llm_data.get("games", []),
+            })
         except KeyboardInterrupt:
             raise
         except Exception as e:
@@ -346,6 +376,8 @@ def process_pending(conn, retry_failed=False, limit=None):
             conn.commit()
 
         time.sleep(RATE_LIMIT_SECONDS)
+
+    return new_extractions
 
 
 def export_to_jsonl(conn):
@@ -384,13 +416,18 @@ def main():
         elif arg.isdigit():
             limit = int(arg)
 
+    from notifier import notify_new_extractions
+
     log.info("LLM backend: %s (command: %s)", LLM_BACKEND, CLI_COMMAND)
     conn = setup_db()
     fetch_candidates(conn, limit=limit)
     prefilter_pending(conn, limit=limit)
-    process_pending(conn, retry_failed=retry_failed, limit=limit)
+    new_extractions = process_pending(conn, retry_failed=retry_failed, limit=limit)
     export_to_jsonl(conn)
     print_status(conn)
+
+    if new_extractions:
+        notify_new_extractions(new_extractions)
 
 
 if __name__ == "__main__":
